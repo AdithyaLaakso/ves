@@ -1,5 +1,5 @@
 DATA_PATH = "./paths.json"
-MAX_SIZE = 10000
+MAX_SIZE = 10780
 IMG_PATH = 0
 LABEL = 1
 import json
@@ -75,5 +75,3 @@ class SingleLetterDataLoader:
             # Ensure labels are in tensor format
             labels = torch.tensor(labels, dtype=torch.long).to(self.device)
             yield imgs, labels
-
-
