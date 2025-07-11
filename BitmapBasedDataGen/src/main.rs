@@ -81,9 +81,34 @@ fn mask_bitmap(mask: &BitMap,
 
     Box::new(new_map)
 }
+fn apply_texture(map: &mut BitMap, tex: &Box<NoiseBuffer::<2>>) -> () {
+    for x in 0..SIZE {
+        for y in 0..SIZE {
+            let xu: usize = x as usize;
+            let uy: usize = y as usize;
+
+            let map_pixel = map.get_pixel(x, y).unwrap();
+            let map_pixel_depth: f64 =
+                (map_pixel.get_red().into(f64).unwrap() +
+                (map_pixel.get_red().into(f64).unwrap() +
+                map_pixel.get_blue() +
+                map_pixel.get_green())
+                / (255 * 3);
+
+            let tex_pixel = tex[[xu,yu]];
+
+            let new_pixel = ((map_pixel_depth * NOISE_FACTOR) + tex_pixel) / (NOISE_FACTOR + 1);
+            let new_rgba = Rgba::new(new_pixel, new_pixel, new_pixel);
+            map.set_pixel(x, y, new_rgba);
+        }
+    }
+
+    ()
+}
 
 fn main() -> io::Result<()> {
     for file in std::fs::read_dir(RAW_DATA_PATH)? {
+        //Step 1: Generate two noise textures
         let fp = file?.path();
         let mask: BitMap = load_map(&fp);
         let noise1: u32 = rand::random_range(0..7);
@@ -91,6 +116,7 @@ fn main() -> io::Result<()> {
 
         let noise1_seed = rand::random_range(0..1000);
         let noise2_seed = rand::random_range(0..1000);
+        let noise3_seed = rand::random_range(0..1000);
 
         let dims = [SIZE as usize, SIZE as usize];
 
@@ -103,7 +129,13 @@ fn main() -> io::Result<()> {
 
         let (bg_tex, mask_tex) = noises;
 
+        //Step 2: Apply the noise textures using the letter texture as a mask
         let new_bmp = mask_bitmap(&mask, &mask_tex, &bg_tex, SIZE);
+
+        //Step 3: Apply a third noise source over the top to slightly augment
+        let source3 = Source::simplex(noise3_seed);
+        let overall_tex = Box::new(NoiseBuffer::<2>::new(dims, &source3));
+        apply_texture(&mut new_bmp, &overall_tex);
 
         let mut file_name = fp.file_name().unwrap().to_str().unwrap().to_owned();
         file_name = OUT_DIR.to_owned() + &file_name;
