@@ -1,5 +1,5 @@
 DATA_PATH = "./paths.json"
-MAX_SIZE = 50000
+MAX_SIZE = 10780
 IMG_PATH = 0
 LABEL = 1
 import json
@@ -30,16 +30,19 @@ class SingleLetterDataset:
         class_names = self.get_class_names()
         return {name: index for index, name in enumerate(class_names)}
 class SingleLetterDataLoader:
-    def __init__(self, dataset, class_to_index, batch_size=32, shuffle=True):
+    def __init__(self, dataset, class_to_index, batch_size=32, shuffle=True, device="cpu"):
         self.dataset = dataset
         self.class_to_index = class_to_index
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.device = device
     def resnet_normalize(self, imgs: Tensor) -> Tensor:
         """Normalize the image tensor using ResNet normalization."""
-        mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1)
-        return (imgs - mean) / std
+        mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1).to(self.device)
+        std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1).to(self.device)
+        imgs -= mean
+        imgs /= std
+        return imgs
     def get_class_name_to_index(self):
         """Create a mapping from class names to indices."""
         class_names = self.dataset.get_class_names()
@@ -54,7 +57,7 @@ class SingleLetterDataLoader:
             np.random.shuffle(data)
         for i in range(0, len(data), self.batch_size):
             batch_data = data[i:i + self.batch_size]
-            imgs = [np.array(Image.open(item[IMG_PATH]).convert("RGB"))/255.0 for item in batch_data]
+            imgs = [(np.array(Image.open(item[IMG_PATH]).convert("RGB"))/255.0) for item in batch_data]
             # Ensure images are identical in shape
             if len(imgs) == 0:
                 continue
@@ -66,11 +69,9 @@ class SingleLetterDataLoader:
             # reshape images to (batch_size, channels, height, width)
             imgs = np.array([np.transpose(img, (2, 0, 1)) for img in imgs])
             # Convert images to tensor
-            imgs = torch.tensor(imgs, dtype=torch.float32)
+            imgs = torch.tensor(imgs, dtype=torch.float32).to(self.device)
             # Normalize images
-            imgs = self.resnet_normalize(imgs)
+            imgs = self.resnet_normalize(imgs).to(self.device)
             # Ensure labels are in tensor format
-            labels = torch.tensor(labels, dtype=torch.long)
+            labels = torch.tensor(labels, dtype=torch.long).to(self.device)
             yield imgs, labels
-    
-    
