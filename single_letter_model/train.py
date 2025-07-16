@@ -8,7 +8,7 @@ from dataset import SingleLetterDataset, SingleLetterDataLoader # Replace with y
 # Hyperparameters
 batch_size = 32
 learning_rate = 1e-3
-num_epochs = 4
+num_epochs = 10
 train_percent = 0.8  # Percentage of data to use for training
 
 # dataset
