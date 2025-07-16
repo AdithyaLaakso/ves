@@ -5,8 +5,6 @@ from torch.utils.data import random_split
 from model import SingleLetterModel  # Replace with your actual model class name
 from dataset import SingleLetterDataset, SingleLetterDataLoader # Replace with your actual dataset class name
 
-
-
 # Hyperparameters
 batch_size = 32
 learning_rate = 1e-3
@@ -24,7 +22,6 @@ criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 # Split dataset into train and test sets
-
 train_size = int(train_percent * len(dataset))
 test_size = len(dataset) - train_size
 indices = torch.randperm(len(dataset))
@@ -33,8 +30,22 @@ test_indices = indices[train_size:]
 train_dataset = [dataset[i] for i in train_indices]
 test_dataset = [dataset[i] for i in test_indices]
 
-train_loader = SingleLetterDataLoader(train_dataset, class_to_index=label_dict, batch_size=batch_size, shuffle=True)
-test_loader = SingleLetterDataLoader(test_dataset, class_to_index=label_dict, batch_size=batch_size, shuffle=False)
+# Gpu settings
+gpu_avail = torch.cuda.is_available()
+device = torch.device("cuda:0" if gpu_avail else "cpu")
+model.to(device)
+print(f"Training on device: {device}")
+
+train_loader = SingleLetterDataLoader(train_dataset,
+                                      class_to_index=label_dict,
+                                      batch_size=batch_size,
+                                      shuffle=True,
+                                      device=device)
+test_loader = SingleLetterDataLoader(test_dataset,
+                                     class_to_index=label_dict,
+                                     batch_size=batch_size,
+                                     shuffle=False,
+                                     device=device)
 
 # Training loop
 for epoch in range(num_epochs):
