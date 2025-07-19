@@ -44,8 +44,6 @@ for epoch in range(num_epochs):
     for inputs, targets in train_loader:  # targets are now images
         optimizer.zero_grad()
         outputs = model(inputs)
-        print("outputs shape:", outputs.shape)
-        print("targets shape:", targets.shape)
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
