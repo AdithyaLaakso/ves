@@ -1,4 +1,4 @@
-DATA_PATH = "./paths.json"
+DATA_PATH = "/Windows/training_data/paths.json"
 MAX_SIZE = 50000
 INPUT_IMG_PATH = 0
 OUTPUT_IMG_PATH = 1
@@ -61,7 +61,4 @@ class SingleLetterDataLoader:
             # Normalize images
             #input_images = self.resnet_normalize(input_images)
             #output_images = self.resnet_normalize(output_images)
-            
             yield input_images, output_images
-    
-    
