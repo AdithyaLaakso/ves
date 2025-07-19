@@ -23,10 +23,11 @@ class SingleLetterDataset:
                 data = all_data
         return data
 class SingleLetterDataLoader:
-    def __init__(self, dataset, batch_size=32, shuffle=True):
+    def __init__(self, dataset, batch_size=32, shuffle=True, device="cpu"):
         self.dataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.device = device
     def resnet_normalize(self, imgs: Tensor) -> Tensor:
         """Normalize the image tensor using ResNet normalization."""
         mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1)
@@ -58,6 +59,8 @@ class SingleLetterDataLoader:
             # Convert images to tensor
             input_images = torch.tensor(input_images, dtype=torch.float32)
             output_images = torch.tensor(output_images, dtype=torch.float32)
+            input_images = input_images.to(self.device)
+            output_images = output_images.to(self.device)
             # Normalize images
             #input_images = self.resnet_normalize(input_images)
             #output_images = self.resnet_normalize(output_images)
