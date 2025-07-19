@@ -59,8 +59,8 @@ class SingleLetterDataLoader:
             input_images = torch.tensor(input_images, dtype=torch.float32)
             output_images = torch.tensor(output_images, dtype=torch.float32)
             # Normalize images
-            input_images = self.resnet_normalize(input_images)
-            output_images = self.resnet_normalize(output_images)
+            #input_images = self.resnet_normalize(input_images)
+            #output_images = self.resnet_normalize(output_images)
             
             yield input_images, output_images
     
