@@ -60,4 +60,4 @@ for epoch in range(num_epochs):
     print(f"Test Loss: {avg_test_loss:.4f}")
 
 # Save the trained model
-torch.save(model.state_dict(), "trained_model.pth")
+torch.save(model.state_dict(), "trained_image_reconstruction_model.pth")
