@@ -10,25 +10,25 @@ class SingleLetterModel(nn.Module):
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 128x128
+            nn.MaxPool2d(2, 2),  # 64x64
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 64x64
+            nn.MaxPool2d(2, 2),  # 32x32
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 32x32
+            nn.MaxPool2d(2, 2),  # 16x16
             nn.Conv2d(256, 512, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 16x16
+            nn.MaxPool2d(2, 2),  # 8x8
         )
         # Decoder
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2),  # 32x32
+            nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2),  # 8x8 -> 16x16
             nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),  # 64x64
+            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),  # 16x16 -> 32x32
             nn.ReLU(inplace=True),
-            nn.Conv2d(128, 3, kernel_size=3, padding=1),            # 64x64, output channels=3
-            nn.Sigmoid()  # Output pixel values between 0 and 1
+            nn.Conv2d(128, 3, kernel_size=3, padding=1),             # Final output, channels=3
+            nn.Sigmoid()
         )
 
     def forward(self, x):

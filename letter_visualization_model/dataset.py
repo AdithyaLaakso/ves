@@ -38,8 +38,9 @@ class SingleLetterDataLoader:
             np.random.shuffle(data)
         for i in range(0, len(data), self.batch_size):
             batch_data = data[i:i + self.batch_size]
-            input_images = [np.array(Image.open(item[INPUT_IMG_PATH]).convert("RGB"))/255.0 for item in batch_data]
-            output_images = [np.array(Image.open(item[OUTPUT_IMG_PATH]).convert("RGB"))/255.0 for item in batch_data]
+            # MAKE SURE YOU REMOVE RESIZING
+            input_images = [np.array(Image.open(item[INPUT_IMG_PATH]).convert("RGB").resize((128, 128)))/255.0 for item in batch_data]
+            output_images = [np.array(Image.open(item[OUTPUT_IMG_PATH]).convert("RGB").resize((32, 32)))/255.0 for item in batch_data]
             # Ensure images are identical in shape
             if len(input_images) == 0:
                 continue
@@ -47,9 +48,10 @@ class SingleLetterDataLoader:
             for img in input_images:
                 if img.shape != input_img_shape:
                     raise ValueError(f"Image shape mismatch: expected {input_img_shape}, got {img.shape}")
+            output_img_shape = output_images[0].shape
             for img in output_images:
-                if img.shape != input_img_shape:
-                    raise ValueError(f"Image shape mismatch: expected {input_img_shape}, got {img.shape}")
+                if img.shape != output_img_shape:
+                    raise ValueError(f"Image shape mismatch: expected {output_img_shape}, got {img.shape}")
             # Convert images to numpy arrays and transpose to (C, H, W)
             input_images = np.array([np.transpose(img, (2, 0, 1)) for img in input_images])
             output_images = np.array([np.transpose(img, (2, 0, 1)) for img in output_images])
