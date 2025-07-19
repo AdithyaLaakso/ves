@@ -14,8 +14,13 @@ train_percent = 0.8
 train_test_data = SingleLetterDataset()
 dataset = train_test_data.dataset
 
+#select device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(f"training on {device}")
+
 # Model, Loss, Optimizer
 model = SingleLetterModel()
+model.to(device)
 criterion = torch.nn.MSELoss()  # For image reconstruction
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -28,8 +33,8 @@ test_indices = indices[train_size:]
 train_dataset = [dataset[i] for i in train_indices]
 test_dataset = [dataset[i] for i in test_indices]
 
-train_loader = SingleLetterDataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-test_loader = SingleLetterDataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+train_loader = SingleLetterDataLoader(train_dataset, batch_size=batch_size, shuffle=True, device=device)
+test_loader = SingleLetterDataLoader(test_dataset, batch_size=batch_size, shuffle=False, device=device)
 
 # Training loop
 for epoch in range(num_epochs):
