@@ -14,7 +14,7 @@ for noisy_path, clean_path in paths_dict['paths'][:10]:
 
     # Load the trained model
     model = SingleLetterModel()  # Initialize your model
-    state_dict = torch.load('trained_model.pth', map_location=torch.device('cpu'))
+    state_dict = torch.load('trained_image_reconstruction_model.pth', map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
     model.load_state_dict(state_dict)
     model.eval()
 

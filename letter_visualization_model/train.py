@@ -21,7 +21,25 @@ print(f"training on {device}")
 # Model, Loss, Optimizer
 model = SingleLetterModel()
 model.to(device)
-criterion = torch.nn.MSELoss()  # For image reconstruction
+# criterion = torch.nn.MSELoss()  # For image reconstruction
+# create criterion that compares output and target images with bias against white pixels
+class BiasedMSELoss(torch.nn.Module):
+    def __init__(self, white_threshold=0.95, bias_factor=6.0):
+        super().__init__()
+        self.white_threshold = white_threshold
+        self.bias_factor = bias_factor
+
+    def forward(self, output, target):
+        # Assume output and target are in [0,1], shape (batch, channels, H, W)
+        mse = (output - target) ** 2
+        # Mask: where output is "white" but target is "dark"
+        white_guess = output > self.white_threshold
+        dark_target = target < (1.0 - self.white_threshold)
+        bias_mask = white_guess & dark_target
+        mse[bias_mask] *= self.bias_factor
+        return mse.mean()
+
+criterion = BiasedMSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 # Split dataset into train and test sets
