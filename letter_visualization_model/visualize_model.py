@@ -6,17 +6,23 @@ from model import SingleLetterModel
 import matplotlib.pyplot as plt
 from constants import hyperparams_list
 
-with open('paths.json', 'r') as f:
+with open('/Windows/training_data/paths.json', 'r') as f:
     paths_dict = json.load(f)
 for hyperparams in hyperparams_list:
     optimizer_name = hyperparams['optimizer_class'].__name__
-    for noisy_path, clean_path in paths_dict['paths']:
+    past_letter = ""
+    for noisy_path, clean_path, letter in paths_dict['paths']:
+        #only show one example per letter
+        if past_letter == letter:
+            continue
+        past_letter = letter
+
         noisy_img = Image.open(noisy_path).convert("RGB")
         clean_img = Image.open(clean_path).convert("RGB")
 
         # Load the trained model
         model = SingleLetterModel()  # Initialize your model
-        state_dict = torch.load(f"letter_visualization_model/trained_image_reconstruction_models/trained_image_reconstruction_model_{optimizer_name}.pth", map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        state_dict = torch.load(f"trained_image_reconstruction_models/trained_image_reconstruction_model_{optimizer_name}.pth", map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
         model.load_state_dict(state_dict)
         model.eval()
 
@@ -41,7 +47,7 @@ for hyperparams in hyperparams_list:
         axs[0].axis('off')
 
         axs[1].imshow(denoised_img)
-        axs[1].set_title('Denoised')
+        axs[1].set_title(f'Denoised {optimizer_name}')
         axs[1].axis('off')
 
         axs[2].imshow(clean_img)

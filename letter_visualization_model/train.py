@@ -1,3 +1,4 @@
+import os
 import torch
 from constants import hyperparams_list
 from model import SingleLetterModel
@@ -13,7 +14,7 @@ print(f"training on {device}")
 
 # create criterion that compares output and target images with bias against white pixels
 class BiasedMSELoss(torch.nn.Module):
-    def __init__(self, bias_factor=6.0):
+    def __init__(self, bias_factor=3.0):
         super().__init__()
         self.bias_factor = bias_factor
 
@@ -70,7 +71,8 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
 
     # Save the trained model
     optimizer_name = optimizer_class.__name__ if hasattr(optimizer_class, "__name__") else str(optimizer_class).split(".")[-1].split("'")[0]
-    torch.save(model.state_dict(), f"letter_visualization_model/trained_image_reconstruction_models/trained_image_reconstruction_model_{optimizer_name}.pth")
+    os.makedirs("trained_image_reconstruction_models", exist_ok=True)
+    torch.save(model.state_dict(), f"trained_image_reconstruction_models/trained_image_reconstruction_model_{optimizer_name}.pth")
     return epoch_loss, avg_test_loss
 
 # Example: iteratively call train_model with varying hyperparameters
