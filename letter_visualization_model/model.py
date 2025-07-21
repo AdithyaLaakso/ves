@@ -10,24 +10,23 @@ class SingleLetterModel(nn.Module):
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 64x64
+            nn.MaxPool2d(2, 2),  # 128x128
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 32x32
+            nn.MaxPool2d(2, 2),  # 64x64
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 16x16
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 8x8
+            nn.MaxPool2d(2, 2),  # 32x32
         )
         # Decoder
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2),  # 8x8 -> 16x16
+            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),  # 32x32 -> 64x64
             nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),  # 16x16 -> 32x32
+            nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2),   # 64x64 -> 128x128
             nn.ReLU(inplace=True),
-            nn.Conv2d(128, 3, kernel_size=3, padding=1),             # Final output, channels=3
+            nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2),    # 128x128 -> 256x256
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 3, kernel_size=3, padding=1),             # Final output, channels=3
             nn.Sigmoid()
         )
 
