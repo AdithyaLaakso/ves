@@ -6,27 +6,14 @@ import torchvision.models as models
 class SingleLetterModel(nn.Module):
     def __init__(self):
         super(SingleLetterModel, self).__init__()
-        # Encoder
+        # use a pre-trained ResNet18 model and modify the final layers such that it outputs 32x32x3 images
+        self.resnet = models.resnet18(pretrained=True)
+        self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 32 * 32 * 3)  # Change the output layer to match the image size
         self.model = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 128x128
-
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 64x64
-
-            # Output image of shape (C, 32, 32)
-            nn.Conv2d(128, 3, kernel_size=1),  # Output 3 channels (RGB)
-            nn.Sigmoid()  # If you want output in [0,1] range
+            self.resnet,
+            nn.Unflatten(1, (3, 32, 32)),  # Unflatten the output to match the image shape
+            nn.Conv2d(3, 3, kernel_size=1),  # Ensure the output is still 3 channels
+            nn.Sigmoid()  # Use Sigmoid to ensure outputs are in the range [0, 1]
         )
     def forward(self, x):
         return self.model(x)
