@@ -1,4 +1,4 @@
-DATA_PATH = "/Windows/training_data/paths.json"
+DATA_PATH = 'paths.json'#"/Windows/training_data/paths.json"
 MAX_SIZE = 50000
 INPUT_IMG_PATH = 0
 OUTPUT_IMG_PATH = 1
@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch import Tensor
 from PIL import Image
+import torch.nn.functional as F
 # TODO: Change sizes to 224x224
 class SingleLetterDataset:
     def __init__(self, data_path=DATA_PATH):
@@ -32,7 +33,10 @@ class SingleLetterDataLoader:
         """Normalize the image tensor using ResNet normalization."""
         mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1)
-        return (imgs - mean) / std
+        imgs = (imgs - mean) / std
+        # resize imgs to 224x224
+        return F.interpolate(imgs, size=(224, 224), mode='bilinear', align_corners=False)
+        
     def __iter__(self):
         data = self.dataset
         if self.shuffle:
@@ -62,6 +66,6 @@ class SingleLetterDataLoader:
             input_images = input_images.to(self.device)
             output_images = output_images.to(self.device)
             # Normalize images
-            #input_images = self.resnet_normalize(input_images)
-            #output_images = self.resnet_normalize(output_images)
+            input_images = self.resnet_normalize(input_images)
+            # output_images = self.resnet_normalize(output_images)
             yield input_images, output_images
