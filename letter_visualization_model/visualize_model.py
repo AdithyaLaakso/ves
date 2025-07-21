@@ -5,16 +5,15 @@ from torchvision import transforms
 from model import SingleLetterModel
 import matplotlib.pyplot as plt
 
-
-with open('paths.json', 'r') as f:
+with open('/Windows/training_data/paths.json', 'r') as f:
     paths_dict = json.load(f)
-for noisy_path, clean_path in paths_dict['paths'][:10]:
+for noisy_path, clean_path, _ in paths_dict['paths'][:10]:
     noisy_img = Image.open(noisy_path).convert("RGB")
     clean_img = Image.open(clean_path).convert("RGB")
 
     # Load the trained model
     model = SingleLetterModel()  # Initialize your model
-    state_dict = torch.load('trained_model.pth', map_location=torch.device('cpu'))
+    state_dict = torch.load('denoise.pth', map_location=torch.device('cpu'))
     model.load_state_dict(state_dict)
     model.eval()
 

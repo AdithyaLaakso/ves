@@ -2,6 +2,7 @@ DATA_PATH = "/Windows/training_data/paths.json"
 MAX_SIZE = 50000
 INPUT_IMG_PATH = 0
 OUTPUT_IMG_PATH = 1
+LABEL_PATH = 2
 import json
 import numpy as np
 import torch
@@ -42,6 +43,7 @@ class SingleLetterDataLoader:
             # MAKE SURE YOU REMOVE RESIZING
             input_images = [np.array(Image.open(item[INPUT_IMG_PATH]).convert("RGB").resize((128, 128)))/255.0 for item in batch_data]
             output_images = [np.array(Image.open(item[OUTPUT_IMG_PATH]).convert("RGB").resize((32, 32)))/255.0 for item in batch_data]
+            labels = [np.array(item[LABEL_PATH]) for item in batch_data]
             # Ensure images are identical in shape
             if len(input_images) == 0:
                 continue
@@ -64,4 +66,4 @@ class SingleLetterDataLoader:
             # Normalize images
             #input_images = self.resnet_normalize(input_images)
             #output_images = self.resnet_normalize(output_images)
-            yield input_images, output_images
+            yield input_images, output_images, labels
