@@ -48,4 +48,3 @@ for noisy_path, clean_path in paths_dict['paths'][:10]:
 
     plt.tight_layout()
     plt.show()
-print(paths_dict)
