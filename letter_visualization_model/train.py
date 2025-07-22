@@ -14,7 +14,8 @@ train_percent = 0.8
 
 # Loss weighting parameters
 alpha = 1.0  # Weight for reconstruction loss (how similar denoised image is to clean image)
-beta = 0.5   # Weight for classification loss (how well classifier performs on denoised image)
+beta = 0.25   # Weight for classification loss (how well classifier performs on denoised image)
+beta_delta = 0.1
 
 # Dataset
 train_test_data = SingleLetterDataset()
@@ -155,7 +156,7 @@ def compute_combined_loss(denoised_images, target_images, true_labels, classifie
 
 # Training loop
 for epoch in range(num_epochs):
-    print(f"Epoch {epoch+1}/{num_epochs}")
+    print(f"Epoch {epoch+1}/{num_epochs}", alpha/beta = {alpha}/{beta}")
     model.train()
 
     running_total_loss = 0.0
@@ -267,6 +268,8 @@ for epoch in range(num_epochs):
     print(f"  Test Reconstruction Loss: {avg_test_recon_loss:.4f}")
     print(f"  Test Classification Accuracy: {avg_test_accuracy:.4f}")
     print("-" * 50)
+
+    beta += beta_delta
 
 # Save the trained denoising model
 torch.save(model.state_dict(), "denoise.pth")
