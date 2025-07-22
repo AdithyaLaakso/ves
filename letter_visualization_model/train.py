@@ -27,7 +27,7 @@ print(f"training on {device}")
 
 # create criterion that compares output and target images with bias against white pixels
 class BiasedMSELoss(torch.nn.Module):
-    def __init__(self, bias_factor=3.0):
+    def __init__(self, bias_factor=5.0):
         super().__init__()
         self.bias_factor = bias_factor
 
@@ -107,7 +107,7 @@ classifier.to(device)
 classifier.eval()  # Set to eval mode - we don't want to train the classifier
 
 # Loss functions and optimizer
-reconstruction_criterion = torch.nn.BiasedMSELoss()
+reconstruction_criterion = BiasedMSELoss()
 classification_criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -171,7 +171,7 @@ def compute_combined_loss(denoised_images, target_images, true_labels, classifie
 
 # Training loop
 for epoch in range(num_epochs):
-    print(f"Epoch {epoch+1}/{num_epochs}", alpha/beta = {alpha}/{beta}")
+    print(f"Epoch {epoch+1}/{num_epochs}, alpha/beta = {alpha}/{beta}")
     model.train()
 
     running_total_loss = 0.0
@@ -180,13 +180,6 @@ for epoch in range(num_epochs):
     num_batches = 0
 
     for batch_data in train_loader:
-        # DEBUG: Let's understand your dataset structure first
-        print(f"DEBUG - batch_data length: {len(batch_data)}")
-        for i, item in enumerate(batch_data):
-            if hasattr(item, 'shape'):
-                print(f"DEBUG - batch_data[{i}] shape: {item.shape}, dtype: {item.dtype}")
-            else:
-                print(f"DEBUG - batch_data[{i}] type: {type(item)}, value: {item}")
 
         # Handle different possible dataset formats
         if len(batch_data) == 2:
@@ -198,18 +191,15 @@ for epoch in range(num_epochs):
                 noisy_inputs = data_item
                 clean_targets = label_item
                 letter_labels = None
-                print("INFO: Detected (noisy_images, clean_images) format")
             else:
                 # If labels look like class indices, then we have (images, class_labels)
                 noisy_inputs = data_item
                 clean_targets = data_item  # Use same image as target for now
                 letter_labels = label_item
-                print("INFO: Detected (images, class_labels) format")
 
         elif len(batch_data) == 3:
             # Ideal case: (noisy_images, clean_images, labels)
             noisy_inputs, clean_targets, letter_labels = batch_data
-            print("INFO: Detected (noisy_images, clean_images, labels) format")
         else:
             raise ValueError(f"Unexpected batch data format: {len(batch_data)} elements")
 
