@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
@@ -7,9 +8,9 @@ from dataset import SingleLetterDataset, SingleLetterDataLoader # Replace with y
 
 # Hyperparameters
 batch_size = 32
-learning_rate = 1e-3
-num_epochs = 10
-train_percent = 0.8  # Percentage of data to use for training
+learning_rate = 1e-5
+num_epochs = 5
+train_percent = 0.95  # Percentage of data to use for training
 
 # dataset
 train_test_data = SingleLetterDataset()  # Initialize your dataset
