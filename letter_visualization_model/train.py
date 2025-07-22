@@ -25,6 +25,21 @@ dataset = train_test_data.dataset
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"training on {device}")
 
+# create criterion that compares output and target images with bias against white pixels
+class BiasedMSELoss(torch.nn.Module):
+    def __init__(self, bias_factor=3.0):
+        super().__init__()
+        self.bias_factor = bias_factor
+
+    def forward(self, output, target):
+        mse = (output - target) ** 2
+        penalty_by_pixel = output * self.bias_factor + 1
+        mse *= penalty_by_pixel
+        reg = torch.mean(output)
+        # make var penalty based on the variance of each output channel
+        var_penalty = torch.var(output, dim=(2, 3)).mean()
+        return mse.mean() - var_penalty * 5
+
 # Models
 # Create a denoising model that outputs cleaned images at 256x256 resolution
 class GreekLetterDenoiser(torch.nn.Module):
@@ -92,7 +107,7 @@ classifier.to(device)
 classifier.eval()  # Set to eval mode - we don't want to train the classifier
 
 # Loss functions and optimizer
-reconstruction_criterion = torch.nn.MSELoss()
+reconstruction_criterion = torch.nn.BiasedMSELoss()
 classification_criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
