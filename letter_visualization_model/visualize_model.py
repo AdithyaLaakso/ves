@@ -6,7 +6,7 @@ from model import SingleLetterModel
 import matplotlib.pyplot as plt
 from constants import hyperparams_list
 
-with open('/Windows/training_data/paths.json', 'r') as f:
+with open('/Windows/training_data/progressive_test/level0/paths.json', 'r') as f:
     paths_dict = json.load(f)
 for hyperparams in hyperparams_list:
     optimizer_name = hyperparams['optimizer_class'].__name__

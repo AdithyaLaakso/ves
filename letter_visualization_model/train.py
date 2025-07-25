@@ -27,7 +27,7 @@ class BiasedMSELoss(torch.nn.Module):
         var_penalty = torch.var(output, dim=(2, 3)).mean()
         return mse.mean() - var_penalty * 5
 
-def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=6.0):
+def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0):
     # Split dataset into train and test sets
     train_size = int(train_percent * len(dataset))
     indices = torch.randperm(len(dataset))

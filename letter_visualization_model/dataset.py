@@ -13,7 +13,7 @@ class SingleLetterDataset:
     def __init__(self, data_path=DATA_PATH):
         self.data_path = data_path
         self.dataset = self.load_dataset()
-    def load_dataset(self):
+    def load_dataset(self, level=0):
         """Load the dataset from the JSON file."""
         with open(self.data_path, "r") as f:
             all_data = json.load(f)['paths']
