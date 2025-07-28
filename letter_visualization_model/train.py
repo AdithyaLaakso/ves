@@ -25,7 +25,7 @@ class BiasedMSELoss(torch.nn.Module):
         reg = torch.mean(output)
         # make var penalty based on the variance of each output channel
         var_penalty = torch.var(output, dim=(2, 3)).mean()
-        return mse.mean() - var_penalty * 5
+        return mse.mean() - var_penalty * 0
 
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0):
     # Split dataset into train and test sets

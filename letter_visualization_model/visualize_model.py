@@ -5,13 +5,20 @@ from torchvision import transforms
 from model import SingleLetterModel
 import matplotlib.pyplot as plt
 from constants import hyperparams_list
-
-with open('/Windows/training_data/progressive_test/level0/paths.json', 'r') as f:
+import random
+import ipywidgets as widgets
+from IPython.display import display, clear_output
+limit = 10  # Limit the number of examples to visualize
+with open('training_data/paths.json', 'r') as f:
     paths_dict = json.load(f)
-for hyperparams in hyperparams_list:
+for hyperparams in hyperparams_list[0:1]:
     optimizer_name = hyperparams['optimizer_class'].__name__
     past_letter = ""
-    for noisy_path, clean_path, letter in paths_dict['paths']:
+    paths = random.sample(paths_dict['paths'], min(limit, len(paths_dict['paths'])))  # Randomly select paths to visualize
+    model = SingleLetterModel()  # Initialize your model
+    state_dict = torch.load(f"trained_image_reconstruction_models/trained_image_reconstruction_model_{optimizer_name}.pth", map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+
+    for noisy_path, clean_path, letter in paths:
         #only show one example per letter
         if past_letter == letter:
             continue
@@ -21,8 +28,7 @@ for hyperparams in hyperparams_list:
         clean_img = Image.open(clean_path).convert("RGB")
 
         # Load the trained model
-        model = SingleLetterModel()  # Initialize your model
-        state_dict = torch.load(f"trained_image_reconstruction_models/trained_image_reconstruction_model_{optimizer_name}.pth", map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+       
         model.load_state_dict(state_dict)
         model.eval()
 
@@ -40,13 +46,15 @@ for hyperparams in hyperparams_list:
             output = model(input_tensor)
 
         denoised_img = transforms.ToPILImage()(output.squeeze(0))
+        # Convert denoised_img to gray scale
+        denoised_img = denoised_img.convert("L")
 
         fig, axs = plt.subplots(1, 3, figsize=(12, 4))
         axs[0].imshow(noisy_img)
         axs[0].set_title('Noisy')
         axs[0].axis('off')
 
-        axs[1].imshow(denoised_img)
+        axs[1].imshow(denoised_img, cmap='gray')
         axs[1].set_title(f'Denoised {optimizer_name}')
         axs[1].axis('off')
 

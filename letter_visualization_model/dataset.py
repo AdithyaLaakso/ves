@@ -1,5 +1,5 @@
-DATA_PATH = 'paths.json'#"/Windows/training_data/paths.json"
-MAX_SIZE = 50000
+DATA_PATH = "training_data/paths.json"
+MAX_SIZE = 500
 INPUT_IMG_PATH = 0
 OUTPUT_IMG_PATH = 1
 import json
