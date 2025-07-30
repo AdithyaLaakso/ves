@@ -3,6 +3,8 @@ import torch
 from constants import hyperparams_list
 from model import SingleLetterModel
 from dataset import SingleLetterDataset, SingleLetterDataLoader
+from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
+import torch.nn.functional as F
 
 # dataset
 train_test_data = SingleLetterDataset()
@@ -13,19 +15,26 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"training on {device}")
 
 # create criterion that compares output and target images with bias against white pixels
-class BiasedMSELoss(torch.nn.Module):
-    def __init__(self, bias_factor=3.0):
-        super().__init__()
-        self.bias_factor = bias_factor
+# class BiasedMSELoss(torch.nn.Module):
+#     def __init__(self, bias_factor=3.0):
+#         super().__init__()
+#         self.bias_factor = bias_factor
+#
+#     def forward(self, output, target):
+#         mse = (output - target) ** 2
+#         penalty_by_pixel = output * self.bias_factor + 1
+#         mse *= penalty_by_pixel
+#         reg = torch.mean(output)
+# make var penalty based on the variance of each output channel
+#         var_penalty = torch.var(output, dim=(2, 3)).mean()
+#         return mse.mean() - var_penalty * 0
+
+class CW_SSIM:
+    def __init__(self, device="cpu"):
+        self.D = SSIM(channels=3)
 
     def forward(self, output, target):
-        mse = (output - target) ** 2
-        penalty_by_pixel = output * self.bias_factor + 1
-        mse *= penalty_by_pixel
-        reg = torch.mean(output)
-        # make var penalty based on the variance of each output channel
-        var_penalty = torch.var(output, dim=(2, 3)).mean()
-        return mse.mean() - var_penalty * 0
+        return self.D(output, target, as_loss=True)
 
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0):
     # Split dataset into train and test sets
@@ -41,7 +50,7 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
 
     model = SingleLetterModel()
     model.to(device)
-    criterion = BiasedMSELoss(bias_factor=bias_factor)
+    criterion = CW_SSIM(device=device)
     optimizer = optimizer_class(model.parameters(), lr=learning_rate)
 
     for epoch in range(num_epochs):
@@ -51,10 +60,12 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         for inputs, targets in train_loader:
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            targets = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
+            loss = criterion.forward(outputs, targets)
             loss.backward()
             optimizer.step()
             running_loss += loss.item() * inputs.size(0)
+
         epoch_loss = running_loss / len(train_loader.dataset)
         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}")
 
@@ -64,7 +75,8 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         with torch.no_grad():
             for inputs, targets in test_loader:
                 outputs = model(inputs)
-                loss = criterion(outputs, targets)
+                targets = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
+                loss = criterion.forward(outputs, targets)
                 test_loss += loss.item() * inputs.size(0)
         avg_test_loss = test_loss / len(test_loader.dataset)
         print(f"Test Loss: {avg_test_loss:.4f}")
@@ -76,7 +88,6 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
     return epoch_loss, avg_test_loss
 
 # Example: iteratively call train_model with varying hyperparameters
-
 
 for params in hyperparams_list:
     print(f"\nTraining with hyperparameters: {params}")
