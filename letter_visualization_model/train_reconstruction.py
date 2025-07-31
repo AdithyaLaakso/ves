@@ -99,7 +99,7 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
 for params in hyperparams_list:
     print(f"\nTraining with hyperparameters: {params}")
     optimizer_name = params.get('optimizer_class').__name__ if hasattr(params.get('optimizer_class'), '__name__') else str(params.get('optimizer_class')).split(".")[-1].split("'")[0]
-    pretrained_model_path = f"C:/Users/randt/OneDrive/Documents/Vesuvius/ves/letter_visualization_model/trained_image_reconstruction_models/trained_image_reconstruction_model_{optimizer_name}.pth"
+    pretrained_model_path = f"trained_image_classification_models/trained_image_classification_model_{optimizer_name}.pth"
     pretrained_model = None
     if os.path.exists(pretrained_model_path):
         pretrained_model = torch.load(pretrained_model_path, map_location=device)
