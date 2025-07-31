@@ -18,16 +18,22 @@ class ReconstructionModel(nn.Module):
         if pretrained_model == None:
             self.resnet = models.resnet18(pretrained=True)
             self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 32 * 32 * 3)
+            self.model = nn.Sequential(
+                self.resnet,
+                nn.ReLU(inplace=True),  # Add ReLU activation for non-linearity
+                nn.Unflatten(1, (3, 32, 32)),
+                nn.Sigmoid()  # Use Sigmoid to ensure output is in [0, 1]
+            )
            
         else:
-            self.resnet = pretrained_model
-            self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 32 * 32 * 3)
-        self.model = nn.Sequential(
-            self.resnet,
-            nn.ReLU(inplace=True),  # Add ReLU activation for non-linearity
-            nn.Unflatten(1, (3, 32, 32)),
-            nn.Sigmoid()
-        )
+            self.model = pretrained_model
+            self.model.resnet.fc = nn.Linear(self.model.resnet.fc.in_features, 32 * 32 * 3)
+            self.model = nn.Sequential(
+                self.model.resnet,
+                nn.ReLU(inplace=True),  # Add ReLU activation for non-linearity
+                nn.Unflatten(1, (3, 32, 32)),
+                nn.Sigmoid()
+            )
 
     def forward(self, x):
         return self.model(x)
