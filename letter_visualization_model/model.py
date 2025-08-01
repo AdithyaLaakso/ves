@@ -34,6 +34,11 @@ class ReconstructionModel(nn.Module):
                 nn.Unflatten(1, (3, 32, 32)),
                 nn.Sigmoid()
             )
-
+    def getFCParams(self):
+        """Get the parameters of the fully connected layer."""
+        return [p for n, p in self.model.named_parameters() if n.startswith('resnet.fc')]
+    def getPretrainedParams(self):
+        """Get the parameters of the pretrained layers."""
+        return [p for n, p in self.model.named_parameters() if not n.startswith('fc.')]
     def forward(self, x):
         return self.model(x)
