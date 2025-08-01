@@ -1,11 +1,11 @@
 import torch
-MAX_SIZE = 100
+MAX_SIZE = 10000000000
 hyperparams_list = [
-    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 1, "train_percent": 0.8, "optimizer_class": torch.optim.Adam},
-    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 1, "train_percent": 0.8, "optimizer_class": torch.optim.SGD},
-    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 1, "train_percent": 0.8, "optimizer_class": torch.optim.RMSprop},
-    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 1, "train_percent": 0.8, "optimizer_class": torch.optim.Adagrad},
-    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 1, "train_percent": 0.8, "optimizer_class": torch.optim.AdamW},
+    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.Adam},
+    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.SGD},
+    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.RMSprop},
+    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.Adagrad},
+    {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.AdamW},
 ]
 
 greek_letters = {
