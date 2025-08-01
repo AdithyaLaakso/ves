@@ -45,8 +45,8 @@ class SingleLetterReconstructionDataLoader:
         for i in range(0, len(data), self.batch_size):
             batch_data = data[i:i + self.batch_size]
             # MAKE SURE YOU REMOVE RESIZING
-            input_images = [np.array(Image.open(f"training_data/{item[INPUT_IMG_PATH]}").convert("RGB"))/255.0 for item in batch_data]
-            output_images = [np.array(Image.open(f"training_data/{item[OUTPUT_IMG_PATH]}").convert("RGB").resize((32, 32)))/255.0 for item in batch_data]
+            input_images = [np.array(Image.open(f"{item[INPUT_IMG_PATH]}").convert("RGB"))/255.0 for item in batch_data]
+            output_images = [np.array(Image.open(f"{item[OUTPUT_IMG_PATH]}").convert("RGB").resize((32, 32)))/255.0 for item in batch_data]
             # Ensure images are identical in shape
             if len(input_images) == 0:
                 continue
@@ -105,7 +105,7 @@ class SingleLetterClassificationDataLoader:
         for i in range(0, len(data), self.batch_size):
             batch_data = data[i:i + self.batch_size]
             # MAKE SURE YOU REMOVE RESIZING
-            input_images = [np.array(Image.open(f"training_data/{item[INPUT_IMG_PATH]}").convert("RGB"))/255.0 for item in batch_data]
+            input_images = [np.array(Image.open(f"{item[INPUT_IMG_PATH]}").convert("RGB"))/255.0 for item in batch_data]
             labels = [greek_letters[item[LABEL]] for item in batch_data]
             # Ensure images are identical in shape
             if len(input_images) == 0:
