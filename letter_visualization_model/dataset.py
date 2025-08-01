@@ -1,5 +1,4 @@
 DATA_PATH = "training_data/paths.json"
-MAX_SIZE = 5000
 INPUT_IMG_PATH = 0
 OUTPUT_IMG_PATH = 1
 LABEL = 2
@@ -9,7 +8,7 @@ import torch
 from torch import Tensor
 from PIL import Image
 import torch.nn.functional as F
-from constants import greek_letters
+from constants import greek_letters, MAX_SIZE
 # TODO: Change sizes to 224x224
 class SingleLetterReconstructionDataset:
     def __init__(self, data_path=DATA_PATH):

@@ -68,7 +68,7 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
     # Save the trained model
     optimizer_name = optimizer_class.__name__ if hasattr(optimizer_class, "__name__") else str(optimizer_class).split(".")[-1].split("'")[0]
     os.makedirs("trained_image_classification_models", exist_ok=True)
-    torch.save(model.state_dict(), f"trained_image_classification_models/trained_image_classification_model_{optimizer_name}.pth")
+    torch.save(model, f"trained_image_classification_models/trained_image_classification_model_{optimizer_name}.pth")
     return epoch_loss, avg_test_loss
 
 # Example: iteratively call train_model with varying hyperparameters

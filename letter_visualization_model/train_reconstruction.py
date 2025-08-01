@@ -52,8 +52,8 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
     model = ReconstructionModel(pretrained_model)
     model.to(device)
     # Exclude fc parameters from the second group to avoid duplication
-    fc_params = list(model.resnet.fc.parameters())
-    pretrained_layers = [p for n, p in model.resnet.named_parameters() if not n.startswith('fc.')]
+    fc_params = model.getFCParams()
+    pretrained_layers = model.getPretrainedParams()
     optimizer = optimizer_class([
         {'params': fc_params, 'lr': learning_rate},
         {'params': pretrained_layers, 'lr': learning_rate/PRETRAIN_PROTECTOR}
@@ -102,6 +102,6 @@ for params in hyperparams_list:
     pretrained_model_path = f"trained_image_classification_models/trained_image_classification_model_{optimizer_name}.pth"
     pretrained_model = None
     if os.path.exists(pretrained_model_path):
-        pretrained_model = torch.load(pretrained_model_path, map_location=device)
+        pretrained_model = torch.load(pretrained_model_path, map_location=device, weights_only=False)
     train_loss, test_loss = train_model(**params, pretrained_model=pretrained_model)
     print(f"Final Train Loss: {train_loss:.4f}, Final Test Loss: {test_loss:.4f}")
