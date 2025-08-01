@@ -2,7 +2,7 @@ import json
 from PIL import Image
 import torch
 from torchvision import transforms
-from model import SingleLetterModel
+from new_model import ReconstructionModel as SingleLetterModel
 import matplotlib.pyplot as plt
 from constants import hyperparams_list
 import random
@@ -28,7 +28,7 @@ for hyperparams in hyperparams_list[0:1]:
         clean_img = Image.open(clean_path).convert("RGB")
 
         # Load the trained model
-       
+
         model.load_state_dict(state_dict)
         model.eval()
 

@@ -36,6 +36,7 @@ class SingleLetterReconstructionDataLoader:
         std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1).to(self.device)
         imgs = (imgs - mean) / std
         # resize imgs to 224x224
+        return imgs
         return F.interpolate(imgs, size=(224, 224), mode='bilinear', align_corners=False)
 
     def __iter__(self):

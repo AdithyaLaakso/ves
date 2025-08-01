@@ -1,7 +1,7 @@
 import os
 import torch
 from constants import hyperparams_list
-from model import ReconstructionModel
+from new_model import ReconstructionModel
 from dataset import SingleLetterReconstructionDataLoader, SingleLetterReconstructionDataset
 from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
 import torch.nn.functional as F
@@ -35,6 +35,7 @@ class CW_SSIM:
         self.D = SSIM(channels=3)
 
     def forward(self, output, target):
+#         print(output.shape, target.shape)
         return self.D(output, target, as_loss=True)
 
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model = None):
@@ -49,7 +50,7 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
     train_loader = SingleLetterReconstructionDataLoader(train_dataset, batch_size=batch_size, shuffle=True, device=device)
     test_loader = SingleLetterReconstructionDataLoader(test_dataset, batch_size=batch_size, shuffle=False, device=device)
 
-    model = ReconstructionModel(pretrained_model)
+    model = ReconstructionModel(pretrained_model=None)
     model.to(device)
     # Exclude fc parameters from the second group to avoid duplication
     fc_params = model.getFCParams()
@@ -66,8 +67,8 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         running_loss = 0.0
         for inputs, targets in train_loader:
             optimizer.zero_grad()
+            inputs = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
             outputs = model(inputs)
-            targets = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
             loss = criterion.forward(outputs, targets)
             loss.backward()
             optimizer.step()
@@ -81,8 +82,8 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         test_loss = 0.0
         with torch.no_grad():
             for inputs, targets in test_loader:
+                inputs = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
                 outputs = model(inputs)
-                targets = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
                 loss = criterion.forward(outputs, targets)
                 test_loss += loss.item() * inputs.size(0)
         avg_test_loss = test_loss / len(test_loader.dataset)
