@@ -2,6 +2,7 @@ import os
 import torch
 from constants import hyperparams_list
 from model import ReconstructionModel
+import classif
 from dataset import SingleLetterReconstructionDataLoader, SingleLetterReconstructionDataset
 from loss import CombinedLoss
 from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS

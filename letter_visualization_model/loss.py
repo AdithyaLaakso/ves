@@ -230,8 +230,8 @@ class CombinedLoss(nn.Module):
         self.ssim_loss = SSIMLoss()
 
         # Load your pre-trained Greek letter classifier
-        self.classifier = classif.SingleLetterModel(num_classes=24)
-        self.classifier.load_state_dict(torch.load("trained_image_classification_model_Adam.pth"))
+        self.classifier = classif.ClassificationModel(num_classes=24)
+        self.classifier.load_state_dict(torch.load("trained_image_classification_models/trained_image_classification_model_Adam.pth", weights_only=False))
         self.classifier.to(device)
         self.classifier.eval()
 
