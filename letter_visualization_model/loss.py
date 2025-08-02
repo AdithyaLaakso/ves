@@ -2,9 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import class
+import classif
 import constants
-
 
 def create_gaussian_kernel(window_size, sigma):
     """Create a 2D Gaussian kernel."""
@@ -229,6 +228,12 @@ class CombinedLoss(nn.Module):
         self.ssim_weight = ssim_weight
         self.l1_weight = l1_weight
         self.ssim_loss = SSIMLoss()
+
+        # Load your pre-trained Greek letter classifier
+        self.classifier = classif.SingleLetterModel(num_classes=24)
+        self.classifier.load_state_dict(torch.load("trained_image_classification_model_Adam.pth"))
+        self.classifier.to(device)
+        self.classifier.eval()
 
         if use_l1:
             self.pixel_loss = nn.L1Loss()
