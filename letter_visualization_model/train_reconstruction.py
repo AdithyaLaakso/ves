@@ -1,8 +1,9 @@
 import os
 import torch
 from constants import hyperparams_list
-from new_model import ReconstructionModel
+from model import ReconstructionModel
 from dataset import SingleLetterReconstructionDataLoader, SingleLetterReconstructionDataset
+from loss import CombinedLoss
 from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
 import torch.nn.functional as F
 PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rate decay
@@ -30,13 +31,14 @@ print(f"training on {device}")
 #         var_penalty = torch.var(output, dim=(2, 3)).mean()
 #         return mse.mean() - var_penalty * 0
 
-class CW_SSIM:
-    def __init__(self, device="cpu"):
-        self.D = SSIM(channels=3)
-
-    def forward(self, output, target):
+# class CW_SSIM:
+#     def __init__(self, device="cpu"):
+#         self.D = SSIM(channels=3)
+#
+#     def forward(self, output, target):
 #         print(output.shape, target.shape)
-        return self.D(output, target, as_loss=True)
+#         return self.D(output, target, as_loss=True)
+#         return torch.sqrt(self.D(output, target, as_loss=True))
 
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model = None):
     # Split dataset into train and test sets
@@ -59,10 +61,10 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         {'params': fc_params, 'lr': learning_rate},
         {'params': pretrained_layers, 'lr': learning_rate/PRETRAIN_PROTECTOR}
     ], lr=learning_rate)
-    criterion = CW_SSIM(device=device)
+    criterion = CombinedLoss()
 
     for epoch in range(num_epochs):
-        print(f"Epoch {epoch+1}/{num_epochs}")
+#         print(f"Epoch {epoch+1}/{num_epochs}")
         model.train()
         running_loss = 0.0
         for inputs, targets in train_loader:
@@ -75,7 +77,7 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
             running_loss += loss.item() * inputs.size(0)
 
         epoch_loss = running_loss / len(train_loader.dataset)
-        print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}")
+#         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}")
 
         # Evaluation on test set
         model.eval()
@@ -87,7 +89,7 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
                 loss = criterion.forward(outputs, targets)
                 test_loss += loss.item() * inputs.size(0)
         avg_test_loss = test_loss / len(test_loader.dataset)
-        print(f"Test Loss: {avg_test_loss:.4f}")
+#         print(f"Test Loss: {avg_test_loss:.4f}")
 
     # Save the trained model
     optimizer_name = optimizer_class.__name__ if hasattr(optimizer_class, "__name__") else str(optimizer_class).split(".")[-1].split("'")[0]
@@ -99,10 +101,10 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
 
 for params in hyperparams_list:
     print(f"\nTraining with hyperparameters: {params}")
-    optimizer_name = params.get('optimizer_class').__name__ if hasattr(params.get('optimizer_class'), '__name__') else str(params.get('optimizer_class')).split(".")[-1].split("'")[0]
-    pretrained_model_path = f"trained_image_classification_models/trained_image_classification_model_{optimizer_name}.pth"
-    pretrained_model = None
-    if os.path.exists(pretrained_model_path):
-        pretrained_model = torch.load(pretrained_model_path, map_location=device, weights_only=False)
-    train_loss, test_loss = train_model(**params, pretrained_model=pretrained_model)
+#     optimizer_name = params.get('optimizer_class').__name__ if hasattr(params.get('optimizer_class'), '__name__') else str(params.get('optimizer_class')).split(".")[-1].split("'")[0]
+#     pretrained_model_path = f"trained_image_classification_models/trained_image_classification_model_{optimizer_name}.pth"
+#     pretrained_model = None
+#     if os.path.exists(pretrained_model_path):
+#         pretrained_model = torch.load(pretrained_model_path, map_location=device, weights_only=False)
+    train_loss, test_loss = train_model(**params)
     print(f"Final Train Loss: {train_loss:.4f}, Final Test Loss: {test_loss:.4f}")
