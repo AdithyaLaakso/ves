@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import class
+import constants
 
 
 def create_gaussian_kernel(window_size, sigma):
@@ -167,6 +169,51 @@ class MS_SSIMLoss(nn.Module):
 
         return 1 - ms_ssim
 
+def compute_classification_accuracy(denoised_images, true_labels, classifier, label_to_idx=constants.greek_letters):
+    with torch.no_grad():
+        predictions = classifier(denoised_images)
+        predicted_labels = torch.argmax(predictions, dim=1)
+
+        # Handle string labels
+        if isinstance(true_labels, list) and len(true_labels) > 0 and isinstance(true_labels[0], np.ndarray):
+            if label_to_idx is None:
+                raise ValueError("label_to_idx mapping required for string labels")
+            # Convert string labels to indices
+            numeric_labels = [label_to_idx[str(label)] for label in true_labels]
+            true_labels = torch.tensor(numeric_labels, device=denoised_images.device, dtype=torch.long)
+        else:
+            # Handle numeric labels
+            if not isinstance(true_labels, torch.Tensor):
+                true_labels = torch.tensor(true_labels, device=denoised_images.device)
+            if true_labels.dim() > 1:
+                true_labels = true_labels.squeeze()
+            true_labels = true_labels.long()
+
+        # Compute accuracy
+        correct = (predicted_labels == true_labels).float()
+        accuracy = correct.mean()
+    return accuracy
+
+def compute_combined_loss(denoised_images, target_images, true_labels, classifier, alpha, beta):
+    """
+    Compute weighted combination of reconstruction loss and classification accuracy
+    """
+
+    # Extract string values from numpy arrays and get unique labels
+    unique_labels_in_batch = list(set(str(label) for label in true_labels))
+    label_to_idx = {label: idx for idx, label in enumerate(sorted(unique_labels_in_batch))}
+    denoised_images_resized = F.interpolate(denoised_images, size=(32, 32), mode='nearest')
+    reconstruction_loss = reconstruction_criterion(denoised_images_resized, target_images)
+
+    # Classification accuracy (converted to loss: 1 - accuracy)
+    accuracy = compute_classification_accuracy(denoised_images, true_labels, classifier, label_to_idx=label_to_idx)
+    classification_loss = 1.0 - accuracy  # Convert accuracy to loss
+
+    # Combined loss
+    total_loss = alpha * reconstruction_loss + beta * classification_loss
+
+    return total_loss, reconstruction_loss, accuracy
+
 class CombinedLoss(nn.Module):
     """
     Combined SSIM + L1/L2 Loss for better training stability
@@ -177,7 +224,7 @@ class CombinedLoss(nn.Module):
         use_l1 (bool): If True, use L1 loss; otherwise use L2 (MSE). Default: True
     """
 
-    def __init__(self, ssim_weight=0.8, l1_weight=0.2, use_l1=False):
+    def __init__(self, ssim_weight=0.4, l1_weight=0.1, acc_weight=0.5, use_l1=False):
         super(CombinedLoss, self).__init__()
         self.ssim_weight = ssim_weight
         self.l1_weight = l1_weight
@@ -199,7 +246,6 @@ class CombinedLoss(nn.Module):
 
         return total_loss
 
-
 # Alternative: Using pytorch-msssim library (if you want to install it)
 # pip install pytorch-msssim
 """
@@ -213,39 +259,3 @@ class SSIMLoss_External(nn.Module):
     def forward(self, img1, img2):
         return 1 - self.ssim_module(img1, img2)
 """
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    # Test the loss functions
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Create dummy images
-    img1 = torch.randn(4, 3, 32, 32).to(device)  # Batch of 4 RGB 32x32 images
-    img2 = torch.randn(4, 3, 32, 32).to(device)
-
-    # Test SSIM Loss
-    ssim_loss = SSIMLoss().to(device)
-    loss_value = ssim_loss(img1, img2)
-    print(f"SSIM Loss: {loss_value.item():.4f}")
-
-    # Test MS-SSIM Loss
-    ms_ssim_loss = MS_SSIMLoss().to(device)
-    ms_loss_value = ms_ssim_loss(img1, img2)
-    print(f"MS-SSIM Loss: {ms_loss_value.item():.4f}")
-
-    # Test Combined Loss
-    combined_loss = CombinedLoss().to(device)
-    combined_value = combined_loss(img1, img2)
-    print(f"Combined Loss: {combined_value.item():.4f}")
-
-    # Test with identical images (should be close to 0)
-    identical_loss = ssim_loss(img1, img1)
-    print(f"SSIM Loss (identical images): {identical_loss.item():.4f}")
-
-    print("\nRecommendations:")
-    print("1. For image reconstruction: Use CombinedLoss (SSIM + L1)")
-    print("2. For denoising tasks: Use SSIMLoss alone")
-    print("3. For high-quality image generation: Use MS_SSIMLoss")
-    print("4. Ensure your images are normalized to [0, 1] range")
-    print("5. Start with learning rate 1e-4 when using SSIM loss")
