@@ -4,7 +4,7 @@ from constants import hyperparams_list
 from model import ReconstructionModel
 import classif
 from dataset import SingleLetterReconstructionDataLoader, SingleLetterReconstructionDataset
-from loss import CombinedLoss
+from loss import CombinedLoss, compute_classification_improvement
 from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
 import torch.nn.functional as F
 PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rate decay
@@ -42,16 +42,6 @@ print(f"training on {device}")
 #         return torch.sqrt(self.D(output, target, as_loss=True))
 
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model = None):
-    # Split dataset into train and test sets
-    train_size = int(train_percent * len(dataset))
-    indices = torch.randperm(len(dataset))
-    train_indices = indices[:train_size]
-    test_indices = indices[train_size:]
-    train_dataset = [dataset[i] for i in train_indices]
-    test_dataset = [dataset[i] for i in test_indices]
-
-    train_loader = SingleLetterReconstructionDataLoader(train_dataset, batch_size=batch_size, shuffle=True, device=device)
-    test_loader = SingleLetterReconstructionDataLoader(test_dataset, batch_size=batch_size, shuffle=False, device=device)
 
     model = ReconstructionModel(pretrained_model=None)
     model.to(device)
@@ -62,35 +52,65 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         {'params': fc_params, 'lr': learning_rate},
         {'params': pretrained_layers, 'lr': learning_rate/PRETRAIN_PROTECTOR}
     ], lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.85)
     criterion = CombinedLoss()
 
-    for epoch in range(num_epochs):
-#         print(f"Epoch {epoch+1}/{num_epochs}")
-        model.train()
-        running_loss = 0.0
-        for inputs, targets in train_loader:
-            optimizer.zero_grad()
-            inputs = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
-            outputs = model(inputs)
-            loss = criterion.forward(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item() * inputs.size(0)
+    levels = [i for i in range(0,31) if i % 5 == 0]
+#     levels = [15, 30]
+    for i in range(0,2):
+        levels.append(100)
+#     levels = [30 for i in range(0,31)]
 
-        epoch_loss = running_loss / len(train_loader.dataset)
-#         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}")
+    for level in levels:
+        print(f"training level: {level}")
+        # Split dataset into train and test sets
+        train_test_data = SingleLetterReconstructionDataset(level=level)
+        dataset = train_test_data.dataset
+        train_size = int(train_percent * len(dataset))
+        indices = torch.randperm(len(dataset))
+        train_indices = indices[:train_size]
+        test_indices = indices[train_size:]
+        train_dataset = [dataset[i] for i in train_indices]
+        test_dataset = [dataset[i] for i in test_indices]
+        train_loader = SingleLetterReconstructionDataLoader(train_dataset, batch_size=batch_size, shuffle=True, device=device)
+        test_loader = SingleLetterReconstructionDataLoader(test_dataset, batch_size=batch_size, shuffle=False, device=device)
 
-        # Evaluation on test set
-        model.eval()
-        test_loss = 0.0
-        with torch.no_grad():
-            for inputs, targets in test_loader:
-                inputs = F.interpolate(targets, size=(32, 32), mode='bilinear', align_corners=False)
+        for epoch in range(num_epochs):
+            print(f"Epoch {epoch+1}/{num_epochs}")
+            model.train()
+            running_loss = 0.0
+            running_sp_loss = 0.0
+            for inputs, targets, labels in train_loader:
+                optimizer.zero_grad()
+                inputs = F.interpolate(inputs, size=(32, 32), mode='bilinear', align_corners=False)
                 outputs = model(inputs)
-                loss = criterion.forward(outputs, targets)
-                test_loss += loss.item() * inputs.size(0)
-        avg_test_loss = test_loss / len(test_loader.dataset)
-#         print(f"Test Loss: {avg_test_loss:.4f}")
+                loss = criterion.forward(outputs, targets, inputs, labels, epoch)
+                sp_loss = compute_classification_improvement(inputs, outputs, labels)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item() * inputs.size(0)
+                running_sp_loss += sp_loss
+
+            epoch_loss = running_loss / len(train_loader.dataset)
+            running_sp_loss /= batch_size
+            print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, Classification Loss: {running_sp_loss:.4f}")
+
+            # Evaluation on test set
+            model.eval()
+            test_loss = 0.0
+            running_sp_loss = 0.0
+            with torch.no_grad():
+                for inputs, targets, labels in test_loader:
+                    inputs = F.interpolate(inputs, size=(32, 32), mode='bilinear', align_corners=False)
+                    outputs = model(inputs)
+                    loss = criterion.forward(outputs, targets, inputs, labels, epoch * level)
+                    sp_loss = compute_classification_improvement(inputs, outputs, labels)
+                    test_loss += loss.item() * inputs.size(0)
+                    running_sp_loss += sp_loss
+            avg_test_loss = test_loss / len(test_loader.dataset)
+            running_sp_loss /= batch_size
+            print(f"Test Loss: {avg_test_loss:.4f} Test Sp Loss: {running_sp_loss:.4f}")
+            scheduler.step()
 
     # Save the trained model
     optimizer_name = optimizer_class.__name__ if hasattr(optimizer_class, "__name__") else str(optimizer_class).split(".")[-1].split("'")[0]

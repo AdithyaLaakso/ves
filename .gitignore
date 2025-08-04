@@ -4,3 +4,4 @@ hand_writing_dataset/
 *.pyc
 *.json
 *.pth
+*.png

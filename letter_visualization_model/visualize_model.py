@@ -15,7 +15,8 @@ with open('training_data/paths.json', 'r') as f:
 for hyperparams in hyperparams_list[0:1]:
     optimizer_name = hyperparams['optimizer_class'].__name__
     past_letter = ""
-    paths = random.sample(paths_dict['paths'], min(limit, len(paths_dict['paths'])))
+    level_30 = [i for i in paths_dict['paths'] if int(i[3]) == 100]
+    paths = random.sample(level_30, 10)
 
     # Initialize and load model ONCE outside the loop
     model = SingleLetterModel()
@@ -40,7 +41,7 @@ for hyperparams in hyperparams_list[0:1]:
     # For displaying outputs, we need to resize back to a reasonable size
     resize_for_display = transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.NEAREST)
 
-    for noisy_path, clean_path, letter in paths:
+    for clean_path, noisy_path, letter, level in paths:
         # Only show one example per letter
         if past_letter == letter:
             continue
