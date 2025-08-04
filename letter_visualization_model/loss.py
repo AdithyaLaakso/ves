@@ -4,7 +4,141 @@ import torch.nn.functional as F
 import numpy as np
 import classif
 import constants
+import torchvision.models as models
 
+def rgb_biased_mse_loss(predictions, targets, black_threshold=0.5, black_penalty_factor=6.0):
+    # Ensure tensors are on the same device
+    if isinstance(predictions, np.ndarray):
+        predictions = torch.from_numpy(predictions).float()
+    if isinstance(targets, np.ndarray):
+        targets = torch.from_numpy(targets).float()
+
+    # Standard MSE loss per pixel per channel
+    mse = (predictions - targets) ** 2
+
+    # Calculate luminance/brightness for each pixel using standard RGB weights
+    # Assumes RGB format - adjust channel dimension based on your data format
+    if predictions.dim() == 4:  # (B, C, H, W) format
+        if predictions.shape[1] == 3:  # channels first
+            pred_luminance = 0.299 * predictions[:, 0] + 0.587 * predictions[:, 1] + 0.114 * predictions[:, 2]
+            target_luminance = 0.299 * targets[:, 0] + 0.587 * targets[:, 1] + 0.114 * targets[:, 2]
+        else:  # (B, H, W, C) format
+            pred_luminance = 0.299 * predictions[:, :, :, 0] + 0.587 * predictions[:, :, :, 1] + 0.114 * predictions[:, :, :, 2]
+            target_luminance = 0.299 * targets[:, :, :, 0] + 0.587 * targets[:, :, :, 1] + 0.114 * targets[:, :, :, 2]
+    else:  # 3D tensor (H, W, C)
+        pred_luminance = 0.299 * predictions[:, :, 0] + 0.587 * predictions[:, :, 1] + 0.114 * predictions[:, :, 2]
+        target_luminance = 0.299 * targets[:, :, 0] + 0.587 * targets[:, :, 1] + 0.114 * targets[:, :, 2]
+
+    # Identify pixels where we predicted black but target is not black
+    predicted_black = pred_luminance < black_threshold
+    target_not_black = target_luminance >= black_threshold
+    wrong_black_predictions = predicted_black & target_not_black
+
+    # Create penalty mask - expand to match MSE dimensions
+    if predictions.dim() == 4 and predictions.shape[1] == 3:  # (B, C, H, W)
+        penalty_mask = wrong_black_predictions.unsqueeze(1).expand_as(mse)
+    elif predictions.dim() == 4:  # (B, H, W, C)
+        penalty_mask = wrong_black_predictions.unsqueeze(-1).expand_as(mse)
+    else:  # 3D tensor
+        penalty_mask = wrong_black_predictions.unsqueeze(-1).expand_as(mse)
+
+    # Apply penalty
+    penalty_weights = torch.where(penalty_mask,
+                                 torch.full_like(mse, black_penalty_factor),
+                                 torch.ones_like(mse))
+
+    biased_mse = mse * penalty_weights
+    return biased_mse.mean()
+
+def rgb_biased_mse_loss_v2(predictions, targets, black_threshold=0.2, black_penalty_factor=2.0,
+                          use_max_channel=False):
+    # Standard MSE
+    mse = (predictions - targets) ** 2
+
+    if use_max_channel:
+        # Use maximum channel value to determine darkness
+        pred_brightness = torch.max(predictions, dim=-1 if predictions.dim() == 3 else 1)[0]
+        target_brightness = torch.max(targets, dim=-1 if targets.dim() == 3 else 1)[0]
+    else:
+        # Use luminance (same as v1)
+        if predictions.dim() == 4 and predictions.shape[1] == 3:  # (B, C, H, W)
+            pred_brightness = 0.299 * predictions[:, 0] + 0.587 * predictions[:, 1] + 0.114 * predictions[:, 2]
+            target_brightness = 0.299 * targets[:, 0] + 0.587 * targets[:, 1] + 0.114 * targets[:, 2]
+        else:  # (B, H, W, C) or (H, W, C)
+            pred_brightness = 0.299 * predictions[..., 0] + 0.587 * predictions[..., 1] + 0.114 * predictions[..., 2]
+            target_brightness = 0.299 * targets[..., 0] + 0.587 * targets[..., 1] + 0.114 * targets[..., 2]
+
+    # Find wrong black predictions
+    predicted_black = pred_brightness < black_threshold
+    target_not_black = target_brightness >= black_threshold
+    wrong_black_mask = predicted_black & target_not_black
+
+    # Expand mask to match MSE shape
+    if predictions.dim() == 4 and predictions.shape[1] == 3:  # (B, C, H, W)
+        penalty_mask = wrong_black_mask.unsqueeze(1).expand_as(mse)
+    else:
+        penalty_mask = wrong_black_mask.unsqueeze(-1).expand_as(mse)
+
+    penalty_weights = torch.where(penalty_mask, black_penalty_factor, 1.0)
+    return (mse * penalty_weights).mean()
+
+# Custom loss class for easy integration with training loops
+class RGBBiasedMSELoss(nn.Module):
+    def __init__(self, black_threshold=0.2, black_penalty_factor=2.0, use_max_channel=False):
+        super().__init__()
+        self.black_threshold = black_threshold
+        self.black_penalty_factor = black_penalty_factor
+        self.use_max_channel = use_max_channel
+
+    def forward(self, predictions, targets):
+        return rgb_biased_mse_loss_v2(predictions, targets,
+                                     self.black_threshold,
+                                     self.black_penalty_factor,
+                                     self.use_max_channel)
+
+# Example usage and testing
+if __name__ == "__main__":
+    # Create sample RGB data
+    batch_size, height, width, channels = 2, 32, 32, 3
+
+    # Random predictions and targets (values between 0 and 1)
+    predictions = torch.rand(batch_size, height, width, channels)
+    targets = torch.rand(batch_size, height, width, channels)
+
+    # Make some predictions artificially dark (black) where targets are bright
+    predictions[0, 10:15, 10:15, :] = 0.1  # Dark prediction
+    targets[0, 10:15, 10:15, :] = 0.8      # Bright target (wrong black prediction)
+
+    # Standard MSE
+    standard_mse = nn.MSELoss()(predictions, targets)
+
+    # Biased MSE with different thresholds
+    biased_loss_02 = rgb_biased_mse_loss(predictions, targets, black_threshold=0.2, black_penalty_factor=3.0)
+    biased_loss_05 = rgb_biased_mse_loss(predictions, targets, black_threshold=0.5, black_penalty_factor=3.0)
+
+    print(f"Standard MSE: {standard_mse:.6f}")
+    print(f"Biased MSE (threshold=0.2): {biased_loss_02:.6f}")
+    print(f"Biased MSE (threshold=0.5): {biased_loss_05:.6f}")
+
+    # Using the loss class
+    loss_fn = RGBBiasedMSELoss(black_threshold=0.3, black_penalty_factor=2.5)
+    class_loss = loss_fn(predictions, targets)
+    print(f"Class-based loss: {class_loss:.6f}")
+
+    # Test different data formats
+    print("\nTesting different tensor formats:")
+
+    # (B, C, H, W) format
+    pred_bchw = predictions.permute(0, 3, 1, 2)  # Convert to channels first
+    target_bchw = targets.permute(0, 3, 1, 2)
+    loss_bchw = rgb_biased_mse_loss(pred_bchw, target_bchw, black_threshold=0.2)
+    print(f"BCHW format loss: {loss_bchw:.6f}")
+
+    # Single image (H, W, C)
+    single_pred = predictions[0]
+    single_target = targets[0]
+    single_loss = rgb_biased_mse_loss(single_pred, single_target, black_threshold=0.2)
+    print(f"Single image loss: {single_loss:.6f}")
 def create_gaussian_kernel(window_size, sigma):
     """Create a 2D Gaussian kernel."""
     coords = torch.arange(window_size, dtype=torch.float32)
@@ -191,48 +325,36 @@ def compute_classification_accuracy(denoised_images, true_labels, classifier, la
         # Compute accuracy
         correct = (predicted_labels == true_labels).float()
         accuracy = correct.mean()
+#         print(f"p {predicted_labels}, t {true_labels} c {correct} a {accuracy}")
     return accuracy
+tmp = classif.SingleLetterModel(num_classes=25)
+tmp.load_state_dict(torch.load("class.pth", weights_only=False))
+tmp.to("cuda:0")
+tmp.eval()
+def compute_classification_improvement(original_image, denoised_images, true_labels, classifier=None):
+    if classifier == None:
+        classifier = tmp
 
-def compute_combined_loss(denoised_images, target_images, true_labels, classifier, alpha, beta):
-    """
-    Compute weighted combination of reconstruction loss and classification accuracy
-    """
-
-    # Extract string values from numpy arrays and get unique labels
-    unique_labels_in_batch = list(set(str(label) for label in true_labels))
-    label_to_idx = {label: idx for idx, label in enumerate(sorted(unique_labels_in_batch))}
-    denoised_images_resized = F.interpolate(denoised_images, size=(32, 32), mode='nearest')
-    reconstruction_loss = reconstruction_criterion(denoised_images_resized, target_images)
-
-    # Classification accuracy (converted to loss: 1 - accuracy)
-    accuracy = compute_classification_accuracy(denoised_images, true_labels, classifier, label_to_idx=label_to_idx)
-    classification_loss = 1.0 - accuracy  # Convert accuracy to loss
-
-    # Combined loss
-    total_loss = alpha * reconstruction_loss + beta * classification_loss
-
-    return total_loss, reconstruction_loss, accuracy
+    before = compute_classification_accuracy(original_image, true_labels, classifier)
+    after = compute_classification_accuracy(denoised_images, true_labels, classifier)
+    accuracy_loss = (before - after)
+    return accuracy_loss
 
 class CombinedLoss(nn.Module):
-    """
-    Combined SSIM + L1/L2 Loss for better training stability
-
-    Args:
-        ssim_weight (float): Weight for SSIM loss. Default: 0.8
-        l1_weight (float): Weight for L1 loss. Default: 0.2
-        use_l1 (bool): If True, use L1 loss; otherwise use L2 (MSE). Default: True
-    """
-
-    def __init__(self, ssim_weight=0.4, l1_weight=0.1, acc_weight=0.5, use_l1=False):
+    def __init__(self, ssim_weight=1.0, l1_weight=4.0, acc_weight=0.00, acc_rel_delta=0.000, use_l1=False):
         super(CombinedLoss, self).__init__()
         self.ssim_weight = ssim_weight
         self.l1_weight = l1_weight
+        self.acc_weight = acc_weight
+        self.acc_rel_delta = acc_rel_delta
         self.ssim_loss = SSIMLoss()
 
+        self.device = torch.device("cuda:0")
+
         # Load your pre-trained Greek letter classifier
-        self.classifier = classif.ClassificationModel(num_classes=24)
-        self.classifier.load_state_dict(torch.load("trained_image_classification_models/trained_image_classification_model_Adam.pth", weights_only=False))
-        self.classifier.to(device)
+        self.classifier = classif.SingleLetterModel(num_classes=25)
+        self.classifier.load_state_dict(torch.load("class.pth", weights_only=False))
+        self.classifier.to(self.device)
         self.classifier.eval()
 
         if use_l1:
@@ -240,13 +362,20 @@ class CombinedLoss(nn.Module):
         else:
             self.pixel_loss = nn.MSELoss()
 
-    def forward(self, pred, target):
+    def forward(self, pred, target, inputs, label, epoch):
         """Calculate combined loss."""
         ssim_loss = self.ssim_loss(pred, target)
-        pixel_loss = self.pixel_loss(pred, target)
+#         pixel_loss = self.pixel_loss(pred,target)
+        pixel_loss = rgb_biased_mse_loss(pred,target, black_threshold=0.3)
+        accuracy_loss = compute_classification_improvement(inputs, pred, label, classifier=self.classifier)
+#         print(f"before: {before}, after: {after}, delta: {accuracy_loss}")
 
-        total_loss = self.ssim_weight * ssim_loss + self.l1_weight * pixel_loss
-        total_loss = torch.sqrt(total_loss)
+#         print(f"ssim_loss: {ssim_loss}, pixel_loss: {pixel_loss}, accuracy_loss: {accuracy_loss}")
+
+        total_loss = self.ssim_weight * ssim_loss + \
+                     self.l1_weight * pixel_loss + \
+                    (self.acc_rel_delta * epoch + self.acc_weight) * accuracy_loss
+#         total_loss = torch.sqrt(total_loss)
 #         total_loss *= 100
 
         return total_loss

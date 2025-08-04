@@ -1,8 +1,8 @@
 import torch
-MAX_SIZE = 10000000000
+MAX_SIZE = 50000
 hyperparams_list = [
 #     {"batch_size": 32, "learning_rate": 1e-5, "num_epochs": 40, "train_percent": 0.8, "optimizer_class": torch.optim.Adam},
-    {"batch_size": 16, "learning_rate": 5e-3, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.Adam},
+    {"batch_size": 512, "learning_rate": 1e-3, "num_epochs": 4, "train_percent": 0.95, "optimizer_class": torch.optim.Adam},
 #     {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.SGD},
 #     {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.RMSprop},
 #     {"batch_size": 128, "learning_rate": 5e-4, "num_epochs": 10, "train_percent": 0.8, "optimizer_class": torch.optim.Adagrad},
