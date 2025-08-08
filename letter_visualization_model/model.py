@@ -6,7 +6,6 @@ from PIL import Image
 import os
 import numpy as np
 
-
 class DoubleConv(nn.Module):
     """Double convolution block used in U-Net"""
     def __init__(self, in_channels, out_channels):
@@ -38,203 +37,216 @@ class Down(nn.Module):
 
 
 class Up(nn.Module):
-    """Upscaling then double conv"""
+    """Upscaling then double conv - FIXED VERSION"""
     def __init__(self, in_channels, out_channels, bilinear=True):
         super(Up, self).__init__()
 
         # Use bilinear upsampling or transposed convolution
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            # FIXED: The conv layer should handle concatenated channels correctly
             self.conv = DoubleConv(in_channels, out_channels)
         else:
             self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, 2, stride=2)
             self.conv = DoubleConv(in_channels, out_channels)
 
     def forward(self, x1, x2):
+        # x1 is the upsampled tensor from deeper layer
+        # x2 is the skip connection from encoder
+
+        # Upsample x1
         x1 = self.up(x1)
 
         # Handle size differences due to padding
         diffY = x2.size()[2] - x1.size()[2]
         diffX = x2.size()[3] - x1.size()[3]
+
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
                         diffY // 2, diffY - diffY // 2])
 
-        # Concatenate skip connection
+        # Concatenate skip connection - this creates the channel dimension mismatch!
+        # x2 (skip) + x1 (upsampled) = concatenated tensor
         x = torch.cat([x2, x1], dim=1)
+
         return self.conv(x)
 
 
-class UNetReconstruction(nn.Module):
-    """U-Net style encoder-decoder for image reconstruction"""
-    def __init__(self, n_channels=3, n_classes=3, bilinear=True):
-        super(UNetReconstruction, self).__init__()
+class UNetSegmentation(nn.Module):
+    """FIXED U-Net for segmentation: 128x128x8 -> 32x32x1"""
+    def __init__(self, n_channels=8, n_classes=1, bilinear=True):
+        super(UNetSegmentation, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
         self.bilinear = bilinear
 
         # Encoder (downsampling path)
-        self.inc = DoubleConv(n_channels, 64)
-        self.down1 = Down(64, 128)
-        self.down2 = Down(128, 256)
-        self.down3 = Down(256, 512)
+        self.inc = DoubleConv(n_channels, 64)          # 128x128x8 -> 128x128x64
+        self.down1 = Down(64, 128)                     # 128x128x64 -> 64x64x128
+        self.down2 = Down(128, 256)                    # 64x64x128 -> 32x32x256
+        self.down3 = Down(256, 512)                    # 32x32x256 -> 16x16x512
+
         factor = 2 if bilinear else 1
-        self.down4 = Down(512, 1024 // factor)
+        self.down4 = Down(512, 1024 // factor)         # 16x16x512 -> 8x8x512
 
-        # Decoder (upsampling path)
-        self.up1 = Up(1024, 512 // factor, bilinear)
-        self.up2 = Up(512, 256 // factor, bilinear)
-        self.up3 = Up(256, 128 // factor, bilinear)
-        self.up4 = Up(128, 64, bilinear)
+        # Decoder (upsampling path) - FIXED CHANNEL CALCULATIONS
+        # When concatenating skip connections, channels double!
+        # up1: 512 (upsampled) + 512 (skip) = 1024 channels input
+        self.up1 = Up(1024, 512 // factor, bilinear)  # 8x8x512 + skip -> 16x16x256
 
-        # Output layer
-        self.outc = nn.Conv2d(64, n_classes, 1)
+        # up2: 256 (upsampled) + 256 (skip) = 512 channels input
+        self.up2 = Up(512, 256 // factor, bilinear)   # 16x16x256 + skip -> 32x32x128
 
-        # Optional: Use tanh activation for outputs in [-1, 1] range
-        # or sigmoid for [0, 1] range
-        self.output_activation = nn.Sigmoid()  # Change to nn.Tanh() if needed
+        # Final segmentation head - only operates at 32x32, no more upsampling
+        self.final_conv = nn.Sequential(
+            nn.Conv2d(128, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 32, 3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, n_classes, 1),  # Final 1x1 conv for segmentation
+            nn.Sigmoid()  # Binary segmentation activation
+        )
 
     def forward(self, x):
         # Encoder path with skip connections
-        x1 = self.inc(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-
+        x1 = self.inc(x)      # 128x128x64
+        x2 = self.down1(x1)   # 64x64x128
+        x3 = self.down2(x2)   # 32x32x256
+        x4 = self.down3(x3)   # 16x16x512
+        x5 = self.down4(x4)   # 8x8x512
         # Decoder path with skip connections
+        # up1: x5 (8x8x512) upsampled and concatenated with x4 (16x16x512) = 16x16x1024 -> 16x16x256
         x = self.up1(x5, x4)
+        # up2: x (16x16x256) upsampled and concatenated with x3 (32x32x256) = 32x32x512 -> 32x32x128
         x = self.up2(x, x3)
-        x = self.up3(x, x2)
-        x = self.up4(x, x1)
-
-        # Final output
-        x = self.outc(x)
-        x = self.output_activation(x)
-
+        # Final segmentation - no more skip connections
+        x = self.final_conv(x)      # 32x32x128 -> 32x32x1
         return x
 
-
-class SimpleEncoderDecoder(nn.Module):
-    """Simpler encoder-decoder without skip connections"""
-    def __init__(self, input_channels=3, output_channels=3):
-        super(SimpleEncoderDecoder, self).__init__()
+class FixedUNetSegmentation(nn.Module):
+    """Alternative fixed U-Net with explicit channel handling"""
+    def __init__(self, n_channels=8, n_classes=1):
+        super(FixedUNetSegmentation, self).__init__()
 
         # Encoder
-        self.encoder = nn.Sequential(
-            # Input: 3 x 32 x 32
-            nn.Conv2d(input_channels, 64, 4, stride=2, padding=1),  # 64 x 16 x 16
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
+        self.enc1 = DoubleConv(n_channels, 64)     # 128x128
+        self.pool1 = nn.MaxPool2d(2)               # 64x64
 
-            nn.Conv2d(64, 128, 4, stride=2, padding=1),  # 128 x 8 x 8
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+        self.enc2 = DoubleConv(64, 128)            # 64x64
+        self.pool2 = nn.MaxPool2d(2)               # 32x32
 
-            nn.Conv2d(128, 256, 4, stride=2, padding=1),  # 256 x 4 x 4
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
+        self.enc3 = DoubleConv(128, 256)           # 32x32
+        self.pool3 = nn.MaxPool2d(2)               # 16x16
 
-            nn.Conv2d(256, 512, 4, stride=2, padding=1),  # 512 x 2 x 2
-            nn.BatchNorm2d(512),
-            nn.ReLU(inplace=True),
-        )
+        self.enc4 = DoubleConv(256, 512)           # 16x16
+        self.pool4 = nn.MaxPool2d(2)               # 8x8
 
-        # Decoder
-        self.decoder = nn.Sequential(
-            # Input: 512 x 2 x 2
-            nn.ConvTranspose2d(512, 256, 4, stride=2, padding=1),  # 256 x 4 x 4
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
+        # Bottleneck
+        self.bottleneck = DoubleConv(512, 1024)    # 8x8
 
-            nn.ConvTranspose2d(256, 128, 4, stride=2, padding=1),  # 128 x 8 x 8
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+        # Decoder - only go up to 32x32
+        self.up1 = nn.ConvTranspose2d(1024, 512, 2, stride=2)  # 8x8 -> 16x16
+        self.dec1 = DoubleConv(1024, 512)  # 512 (up) + 512 (skip) = 1024
 
-            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),  # 64 x 16 x 16
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(64, output_channels, 4, stride=2, padding=1),  # 3 x 32 x 32
-            nn.Sigmoid()  # Output in [0, 1] range
-        )
-
-    def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return decoded
-
-
-class ResidualBlock(nn.Module):
-    """Residual block for better gradient flow"""
-    def __init__(self, channels):
-        super(ResidualBlock, self).__init__()
-        self.conv1 = nn.Conv2d(channels, channels, 3, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(channels)
-        self.conv2 = nn.Conv2d(channels, channels, 3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(channels)
-
-    def forward(self, x):
-        residual = x
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += residual
-        return F.relu(out)
-
-
-class ResidualAutoencoder(nn.Module):
-    """Autoencoder with residual connections for better training"""
-    def __init__(self, input_channels=3, output_channels=3):
-        super(ResidualAutoencoder, self).__init__()
-
-        # Initial convolution
-        self.init_conv = nn.Sequential(
-            nn.Conv2d(input_channels, 64, 7, padding=3, bias=False),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True)
-        )
-
-        # Encoder with residual blocks
-        self.encoder = nn.Sequential(
-            ResidualBlock(64),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1, bias=False),  # Downsample
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-
-            ResidualBlock(128),
-            nn.Conv2d(128, 256, 3, stride=2, padding=1, bias=False),  # Downsample
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-
-            ResidualBlock(256),
-        )
-
-        # Decoder with residual blocks
-        self.decoder = nn.Sequential(
-            ResidualBlock(256),
-
-            nn.ConvTranspose2d(256, 128, 3, stride=2, padding=1, output_padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            ResidualBlock(128),
-
-            nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1, bias=False),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            ResidualBlock(64),
-        )
+        self.up2 = nn.ConvTranspose2d(512, 256, 2, stride=2)   # 16x16 -> 32x32
+        self.dec2 = DoubleConv(512, 256)   # 256 (up) + 256 (skip) = 512
 
         # Final output layer
-        self.final_conv = nn.Sequential(
-            nn.Conv2d(64, output_channels, 7, padding=3),
+        self.final = nn.Sequential(
+            nn.Conv2d(256, 128, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 64, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, n_classes, 1),
             nn.Sigmoid()
         )
 
     def forward(self, x):
-        x = self.init_conv(x)
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        output = self.final_conv(decoded)
+        # Encoder
+        e1 = self.enc1(x)          # 128x128x64
+        p1 = self.pool1(e1)        # 64x64x64
+
+        e2 = self.enc2(p1)         # 64x64x128
+        p2 = self.pool2(e2)        # 32x32x128
+
+        e3 = self.enc3(p2)         # 32x32x256
+        p3 = self.pool3(e3)        # 16x16x256
+
+        e4 = self.enc4(p3)         # 16x16x512
+        p4 = self.pool4(e4)        # 8x8x512
+
+        # Bottleneck
+        b = self.bottleneck(p4)    # 8x8x1024
+
+        # Decoder with skip connections
+        u1 = self.up1(b)           # 8x8x1024 -> 16x16x512
+
+        # Concatenate skip connection
+        u1 = torch.cat([u1, e4], dim=1)  # 16x16x512 + 16x16x512 = 16x16x1024
+        u1 = self.dec1(u1)         # 16x16x1024 -> 16x16x512
+
+        u2 = self.up2(u1)          # 16x16x512 -> 32x32x256
+
+        # Concatenate skip connection
+        u2 = torch.cat([u2, e3], dim=1)  # 32x32x256 + 32x32x256 = 32x32x512
+        u2 = self.dec2(u2)         # 32x32x512 -> 32x32x256
+
+        # Final output
+        output = self.final(u2)    # 32x32x256 -> 32x32x1
+
         return output
+
+
+class SimpleSegmentationCNN(nn.Module):
+    """Simpler CNN for segmentation: 128x128x8 -> 32x32x1 - WORKING VERSION"""
+    def __init__(self, input_channels=8, output_channels=1):
+        super(SimpleSegmentationCNN, self).__init__()
+
+        self.features = nn.Sequential(
+            # First block: 128x128x8 -> 64x64x32
+            nn.Conv2d(input_channels, 32, 3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 32, 3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),  # 64x64
+
+            # Second block: 64x64x32 -> 32x32x64
+            nn.Conv2d(32, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),  # 32x32
+
+            # Third block: 32x32x64 -> 32x32x128
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+        )
+
+        # Segmentation head
+        self.segmentation_head = nn.Sequential(
+            nn.Conv2d(128, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 32, 3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, output_channels, 1),  # 1x1 conv for final prediction
+            nn.Sigmoid()  # Binary segmentation
+        )
+
+    def forward(self, x):
+        features = self.features(x)
+        segmentation = self.segmentation_head(features)
+        return segmentation
 
 
 # Utility function for proper weight initialization
@@ -248,76 +260,91 @@ def init_weights(m):
         nn.init.constant_(m.bias, 0)
 
 
-# Drop-in replacement for your original ReconstructionModel
+# FIXED Drop-in replacement for your original ReconstructionModel
 class ReconstructionModel(nn.Module):
-    """Drop-in replacement that matches your original interface"""
-    def __init__(self, pretrained_model=None, input_channels=3, output_channels=3):
+    """FIXED model for segmentation: 128x128x8 -> 32x32x1"""
+    def __init__(self):
         super(ReconstructionModel, self).__init__()
 
-        # Ignore the pretrained_model parameter for now and use a proper architecture
-        # You can choose which architecture to use here:
+        self.input_channels = 8
+        self.output_classes = 1
 
-        # Option 1: Simple encoder-decoder (recommended to start)
-#         self.model = SimpleEncoderDecoder(input_channels, output_channels)
+        print(f"Initializing ReconstructionModel with {self.input_channels} input channels -> {self.output_classes} output channels")
 
-        # Option 2: U-Net (better results but more complex)
-        self.model = UNetReconstruction(n_channels=input_channels, n_classes=output_channels)
+        # Choose architecture - USING WORKING SIMPLE CNN FOR NOW
+        # Option 1: Simple CNN (guaranteed to work)
+        # self.model = SimpleSegmentationCNN(input_channels, output_channels)
 
-        # Option 3: Residual autoencoder (good for identity mapping)
-        # self.model = ResidualAutoencoder(input_channels, output_channels)
+        # Option 2: Fixed U-Net (use this after testing simple CNN works)
+        self.model = FixedUNetSegmentation(n_channels=self.input_channels, n_classes=self.output_classes)
+
+        # Option 3: Original U-Net with debug prints (for troubleshooting)
+        # self.model = UNetSegmentation(n_channels=input_channels, n_classes=output_channels)
 
         # Initialize weights properly
         self.model.apply(init_weights)
+        print("Model initialized successfully!")
 
     def forward(self, x, i=None):
         """Forward pass - matches your original interface"""
 
-        # Debug code (only runs if i != -1, matching your original logic)
+        # Debug input shape
+        # print(f"ReconstructionModel received input with shape: {x.shape}")
+        # print(f"Expected input channels: {self.input_channels}")
+
+        # Handle input channel mismatch
+        if x.shape[1] != self.input_channels:
+            print(f"WARNING: Input has {x.shape[1]} channels, but model expects {self.input_channels}")
+
+            if x.shape[1] == 3 and self.input_channels == 8:
+                print("Converting 3-channel input to 8-channel by padding with zeros")
+                padding = torch.zeros(x.shape[0], 5, x.shape[2], x.shape[3],
+                                    device=x.device, dtype=x.dtype)
+                self.output_channels = 1
+                x = torch.cat([x, padding], dim=1)
+            elif x.shape[1] == 1 and self.input_channels == 8:
+                print("Converting 1-channel input to 8-channel by replication")
+                x = x.repeat(1, 8, 1, 1)
+            elif x.shape[1] > self.input_channels:
+                print(f"Truncating {x.shape[1]} channels to {self.input_channels}")
+                x = x[:, :self.input_channels]
+            else:
+                raise ValueError(f"Cannot handle input with {x.shape[1]} channels for model expecting {self.input_channels}")
+
+        # Check input spatial dimensions
+        if x.shape[2] != 128 or x.shape[3] != 128:
+            print(f"WARNING: Input spatial size is {x.shape[2]}x{x.shape[3]}, but model expects 128x128")
+            print("Resizing input to 128x128")
+            x = F.interpolate(x, size=(128, 128), mode='bilinear', align_corners=False)
+
+        # Debug code
         if i is not None and i != -1:
-            # Create output directory if it doesn't exist
             os.makedirs("debug_images", exist_ok=True)
-
-            # Save input image
-            self.save_tensor_as_image(x, f"debug_images/input_image{i}.png", "Input")
-
-            # Forward pass
+            self.save_tensor_as_image(x[:, :1], f"debug_images/input_image{i}.png", "Input")
             output = self.model(x)
-
-            # Save output image
-            self.save_tensor_as_image(output, f"debug_images/output_image{i}.png", "Output")
-
+            self.save_tensor_as_image(output, f"debug_images/output_segmentation{i}.png", "Segmentation")
             return output
         else:
-            # Normal forward pass without debugging
             return self.model(x)
 
     def save_tensor_as_image(self, tensor, filepath, description=""):
         """Save a tensor as an image file"""
         try:
-            # Handle batch dimension - take first image if batch size > 1
             if len(tensor.shape) == 4:
-                img_tensor = tensor[0]  # Take first image from batch
+                img_tensor = tensor[0]
             else:
                 img_tensor = tensor
 
-            # Move to CPU and detach from computation graph
             img_tensor = img_tensor.detach().cpu()
-
-            # Clamp to [0, 1] range (important for Sigmoid outputs)
             img_tensor = torch.clamp(img_tensor, 0, 1)
 
-            # Convert to PIL Image
-            if img_tensor.shape[0] == 1:  # Grayscale
+            if img_tensor.shape[0] == 1:
                 img_tensor = img_tensor.squeeze(0)
                 img = transforms.ToPILImage()(img_tensor)
-            elif img_tensor.shape[0] == 3:  # RGB
-                img = transforms.ToPILImage()(img_tensor)
             else:
-                # Handle other channel numbers by converting to grayscale
-                img_tensor = torch.mean(img_tensor, dim=0)
-                img = transforms.ToPILImage()(img_tensor.unsqueeze(0))
+                img_tensor = img_tensor[0:1]
+                img = transforms.ToPILImage()(img_tensor)
 
-            # Save the image
             img.save(filepath)
             print(f"{description} image saved to: {filepath}")
             print(f"{description} tensor shape: {tensor.shape}, min: {tensor.min():.4f}, max: {tensor.max():.4f}")
@@ -328,40 +355,43 @@ class ReconstructionModel(nn.Module):
 
     def getFCParams(self):
         """Get parameters of final layers (for compatibility)"""
-        # Return parameters of the final convolutional layers
         final_params = []
         for name, param in self.model.named_parameters():
-            if 'final' in name or 'outc' in name or 'decoder' in name:
+            if any(keyword in name.lower() for keyword in ['final', 'segmentation', 'head', 'outc']):
                 final_params.append(param)
         return final_params if final_params else list(self.model.parameters())
 
     def getPretrainedParams(self):
         """Get parameters of earlier layers (for compatibility)"""
-        # Return parameters of encoder layers
         pretrained_params = []
-        for name, param in self.model.named_parameters():
-            if 'encoder' in name or 'inc' in name or 'down' in name:
+        final_param_ids = {id(p) for p in self.getFCParams()}
+        for param in self.model.parameters():
+            if id(param) not in final_param_ids:
                 pretrained_params.append(param)
-        return pretrained_params if pretrained_params else []
+        return pretrained_params
 
 
-# Example usage and training tips:
+# Test the fixed model
 if __name__ == "__main__":
-    # This should now work as a drop-in replacement
-    model = ReconstructionModel(pretrained_model=None)
+    print("Testing FIXED ReconstructionModel...")
 
-    # Test with dummy data
-    x = torch.randn(4, 3, 32, 32)  # Batch of 4 RGB 32x32 images
-    output = model(x)
-    print(f"Input shape: {x.shape}")
-    print(f"Output shape: {output.shape}")
+    # Test with correct 8-channel input
+    print("\n=== Test: 8-channel input ===")
+    model = ReconstructionModel(input_channels=8, output_channels=1)
+    x = torch.randn(2, 8, 128, 128)
 
-    # Test debug mode
-    output_debug = model(x, i=0)  # This should save debug images
+    try:
+        with torch.no_grad():
+            output = model(x)
+        print(f"✓ SUCCESS! Input: {x.shape} -> Output: {output.shape}")
+        print(f"Output range: [{output.min():.4f}, {output.max():.4f}]")
+    except Exception as e:
+        print(f"✗ FAILED: {e}")
+        import traceback
+        traceback.print_exc()
 
-    print("\nTraining recommendations:")
-    print("- Optimizer: Adam with lr=1e-3")
-    print("- Loss: MSELoss() or L1Loss()")
-    print("- Batch size: 16-64 depending on GPU memory")
-    print("- Learning rate schedule: StepLR with step_size=10, gamma=0.5")
-    print("- Input normalization: [0, 1] range to match Sigmoid output")
+    print("\nIf this test passes, your model architecture is now fixed!")
+    print("Next steps:")
+    print("1. Replace your model.py with this fixed version")
+    print("2. Test with your actual dataloader")
+    print("3. If simple CNN works, you can try the FixedUNetSegmentation")
