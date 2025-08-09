@@ -5,7 +5,8 @@ from torchvision import transforms
 from PIL import Image
 import matplotlib.pyplot as plt
 
-from model import ReconstructionModel  # Now using your fixed model
+from model import VisionTransformerForSegmentation
+
 # from constants import hyperparams_list  # Optional, not used here
 
 limit = 10  # Number of samples to visualize
@@ -15,13 +16,13 @@ with open('training_data/paths.json', 'r') as f:
     paths_dict = json.load(f)
 
 # Filter level 30 examples
-# level_30 = [i for i in paths_dict['paths'] if int(i[3]) == 20]
 level_30 = [i for i in paths_dict['paths'] if int(i[3]) == 100]
+# level_30 = data
 paths = random.sample(level_30, limit)
 
 # Initialize model
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = ReconstructionModel()
+model = VisionTransformerForSegmentation()
 model = model.to(device)
 
 # Load trained weights
@@ -31,6 +32,7 @@ model.eval()
 
 # Preprocessing: Resize to 128x128 and ensure tensor format
 preprocess = transforms.Compose([
+    transforms.Grayscale(num_output_channels=1),  # Convert to 1 channel
     transforms.Resize((128, 128)),
     transforms.ToTensor(),
 ])
