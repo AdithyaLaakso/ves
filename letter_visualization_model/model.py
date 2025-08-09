@@ -155,7 +155,7 @@ class InputNormalization(nn.Module):
 class VisionTransformerForSegmentation(nn.Module):
     def __init__(self,
                  image_size=128,
-                 patch_size=16,
+                 patch_size=8,
                  in_channels=1,
                  out_channels=1,
                  embed_size=768,

@@ -38,11 +38,11 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
     # Use segmentation-specific loss
     criterion = BinarySegmentationLoss()
 
-    # levels = [0]
+    # levels = [1]
     # levels = [30, 100]
     levels = [i for i in range(1, 31)]
-    for i in range(0, 2):
-        levels.append(100)
+    # for i in range(0, 2):
+    #     levels.append(100)
 
     for level in levels:
         print(f"Training level: {level}")
