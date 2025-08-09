@@ -5,6 +5,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 import os
 import numpy as np
+import settings
 
 # ImageToPatches returns multiple flattened square patches from an
 # input image tensor.
@@ -153,32 +154,25 @@ class InputNormalization(nn.Module):
         return x
 @torch.compile
 class VisionTransformerForSegmentation(nn.Module):
-    def __init__(self,
-                 image_size=128,
-                 patch_size=8,
-                 in_channels=1,
-                 out_channels=1,
-                 embed_size=768,
-                 num_blocks=12,
-                 num_heads=8,
-                 dropout=0.2,
-                 output_size=32
-         ):
+    def __init__(self):
         super().__init__()
-        self.image_size = image_size
-        self.patch_size = patch_size
-        self.embed_size = embed_size
-        self.num_blocks = num_blocks
-        self.num_heads = num_heads
-        self.dropout = dropout
+        self.output_size = settings.output_size
+        self.in_channels = settings.in_channels
+        self.out_channels = settings.out_channels
+        self.image_size = settings.image_size
+        self.patch_size = settings.patch_size
+        self.embed_size = settings.embed_size
+        self.num_blocks = settings.num_blocks
+        self.num_heads = settings.num_heads
+        self.dropout = settings.dropout
 
-        heads = [ SelfAttentionEncoderBlock(embed_size, num_heads, dropout) for i in range(num_blocks) ]
+        heads = [ SelfAttentionEncoderBlock(self.embed_size, self.num_heads, self.dropout) for i in range(self.num_blocks) ]
         self.layers = nn.Sequential(
             # InputNormalization(),
             # nn.BatchNorm2d(num_features=in_channels),
-            VisionTransformerInput(image_size, patch_size, in_channels, embed_size),
+            VisionTransformerInput(self.image_size, self.patch_size, self.in_channels, self.embed_size),
             nn.Sequential(*heads),
-            OutputProjection(image_size, patch_size, embed_size, out_channels, output_size),
+            OutputProjection(self.image_size, self.patch_size, self.embed_size, self.out_channels, self.output_size),
         )
 
     def forward(self, x):

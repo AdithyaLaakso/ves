@@ -13,8 +13,8 @@ from constants import greek_letters, MAX_SIZE
 import settings
 
 DATA_PATH = settings.data_path
-INPUT_IMG_PATH = 0
-OUTPUT_IMG_PATH = 1
+OUTPUT_IMG_PATH = 0
+INPUT_IMG_PATH = 1
 LABEL = 2
 LEVEL = 3
 
@@ -286,12 +286,12 @@ class SingleLetterSegmentationDataLoader:
                 [torch.from_numpy(img) if isinstance(img, np.ndarray) else img
                  for img in input_images],
                 dim=0
-            )
+            ).to(self.device)
             output_masks_tensor = torch.stack(
                 [torch.from_numpy(mask) if isinstance(mask, np.ndarray) else mask
                  for mask in output_masks],
                 dim=0
-            )
+            ).to(self.device)
 
             # Random inversion (1 in 2 chance) - apply to raw images before normalization
             if random.random() < 0.5:
@@ -414,11 +414,8 @@ class SingleLetterSegmentationDataLoader:
                     timeout_count = 0  # Reset timeout counter on success
 
             except queue.Empty:
-                timeout_count += 1
-                print(f"Warning: Timeout waiting for batch ({timeout_count}/3)")
-                if timeout_count >= 3:
-                    print("Too many timeouts, stopping iteration")
-                    break
+                print("uhhhh the batch queue is empty")
+                break
 
         self._stop_workers()
 
