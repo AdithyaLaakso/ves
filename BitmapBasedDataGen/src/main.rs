@@ -12,9 +12,9 @@ const OG_SIZE: u32 = 32;
 const F_SIZE: f64 = (SIZE as f64) / 100.;
 const PERLIN_SCALE: [f64; 2] = [F_SIZE; 2];
 const DIMS: [usize; 2] = [SIZE as usize, SIZE as usize];
-const NOISE_FACTOR: f64 = 3./4.;
+const NOISE_FACTOR: f64 = 4.0;
 const LEVELS: usize = 30;
-const RAW_DATA_PATH: &str = "/home/Adithya/Documents/ves/raw_data/";
+const RAW_DATA_PATH: &str = "/home/Adithya/Documents/progressive_test/level0/og/";
 
 fn upscale_dir(dir_path: &str, size: u32) -> Result<(), Box< dyn std::error::Error>> {
     for dir_type in std::fs::read_dir(dir_path)? {
@@ -79,6 +79,8 @@ fn mask_bitmap(mask: &BitMap,
     let outsize = size.try_into().unwrap();
     let mut new_map = BitMap::new(outsize, outsize);
 
+    let help = 1. - noise_reduction;
+
     for x in 0..size {
         for y in 0..size {
             let xu: usize = x as usize;
@@ -87,11 +89,18 @@ fn mask_bitmap(mask: &BitMap,
             let pixel_at_xy = *(mask.get_pixel(x,y).expect("failed to unwrap pixel value"));
             let out: bool = pixel_at_xy.get_red() == 255 && pixel_at_xy.get_blue() == 255 && pixel_at_xy.get_green() == 255;
 
+            let mut gonna_flip = false;
+            let prob_flip = rand::random_range(0..100000);
+            let prob_flip: f64 = prob_flip as f64 / 100000.;
+            if prob_flip < noise_reduction {
+                gonna_flip = rand::random_range(0..2) != 0;
+            }
+
             let texture_xy: f64;
-            if out {
-                texture_xy = (((mask_out_texture[[xu,yu]] + 1.0) / 2.0) + (1. - noise_reduction)).clamp(0.0, 1.0);
+            if (out && !gonna_flip) || (!out && gonna_flip) {
+                texture_xy = (((mask_out_texture[[xu,yu]] + 1.0) / 2.0) + (1. - help)).clamp(0.0, 1.0);
             } else {
-                texture_xy = (((mask_in_texture[[xu,yu]] + 1.0) / 2.0) - (noise_reduction)).clamp(0.0, 1.0);
+                texture_xy = (((mask_in_texture[[xu,yu]] + 1.0) / 2.0) - (help)).clamp(0.0, 1.0);
             }
 
             let pixel_value: u8 = (255.0 * texture_xy) as u8;
@@ -171,54 +180,39 @@ fn get_random_source(seed: u64) -> NoiseSource {
     source
 }
 
-fn crop_and_resize(map: &mut BitMap, fx: u32 , tx: u32, fy: u32, ty: u32, resize: u32) -> () {
-    let _ = map.crop(fx, fy, tx, ty);
-    map.slow_resize_to(resize, resize);
-}
-
 fn main() -> io::Result<()> {
     let dir: Vec<_> = std::fs::read_dir(RAW_DATA_PATH)?
     .collect::<Result<Vec<_>, _>>()?;
     let file_count = dir.len();
-    //     let noise_count = (file_count / NOISE_RATIO_DENOMINATOR) as usize;
-    //     let count = file_count + noise_count;
     let count = file_count;
 
-    println!("(0/{count} working!");
     //     for level in 0..LEVELS {
     for level in 1..=LEVELS {
-        for (file_numer, file) in dir.iter().enumerate() {
+        let noise_level = (level as f64) / (LEVELS as f64);
+        for (_, file) in dir.iter().enumerate() {
 
             //Step 1: load two copies of the base data
             let fp = file.path();
             let mask: BitMap = load_map(&fp);
-            let og_copy: BitMap = load_map(&fp);
             let file_name = fp.file_name().unwrap().to_str().unwrap().to_owned();
-            let og: String = format!("/Windows/training_data/progressive_test/level{level}/og/{file_name}");
-            let noisy: String = format!("/Windows/training_data/progressive_test/level{level}/noisy/{file_name}");
+            let noisy: String = format!("/Windows/training_data/noise_source_prog/level_{level}_noisy_{file_name}");
 
             //Step 3: Save the og
-            let _ = og_copy.save_as(&og);
+            //let _ = og_copy.save_as(&og);
 
-            // Step 4: generate and apply noise
-            //         let noise1_seed = rand::random_range(0..std::u64::MAX);
-            //         let noise2_seed = rand::random_range(0..std::u64::MAX);
-            //         let source1 = get_random_source(noise1_seed);
-            //         let source2 = get_random_source(noise2_seed);
-            //         let (bg_tex, mask_tex) = (
-            //             source1.get_buffer_box(),
-            //             source2.get_buffer_box()
-            //         );
-            let noise_level = (level as f64) / (LEVELS as f64);
-            //         let mut new_bmp = mask_bitmap(&mask, &mask_tex, &bg_tex, SIZE, noise_level);
+            let noise1_seed = rand::random_range(0..std::u64::MAX);
+            let noise2_seed = rand::random_range(0..std::u64::MAX);
+            let source1 = get_random_source(noise1_seed);
+            let source2 = get_random_source(noise2_seed);
+            let (bg_tex, mask_tex) = (
+                source1.get_buffer_box(),
+                source2.get_buffer_box()
+            );
+            let mut new_bmp = mask_bitmap(&mask, &mask_tex, &bg_tex, SIZE, noise_level);
             let noise3_seed = rand::random_range(0..std::u64::MAX);
-            let mut new_bmp = mask;
             let source3 = get_random_source(noise3_seed);
             apply_texture(&mut new_bmp, &source3.get_buffer_box(), noise_level as f64);
 
-            //Step 5: Save the noisy
-//             print!("(\r ({file_numer}/{count}) Saving to... {file_name}");
-            io::stdout().flush().unwrap();
             let _ = new_bmp.save_as(&noisy);
         }
     }

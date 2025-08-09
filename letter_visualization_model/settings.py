@@ -13,7 +13,7 @@ loss_settings = LossSettings(
     mse_weight=0.0,
     boundary_weight=0.0,
     focal_weight=2.0,
-    focal_alpha=0.25,
+    focal_alpha=0.5,
     focal_gamma=2.0
 )
 
@@ -23,9 +23,9 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=2,
-    batch_size=16,  # smaller batch size for 128x128 images
-    learning_rate=1e-4,  # lower learning rate for segmentation
+    num_epochs=1,
+    batch_size=16,
+    learning_rate=1e-4,
     train_percent=0.999,
     optimizer_class=torch.optim.Adam,  # Note: Capital A in Adam
     bias_factor=20.0
