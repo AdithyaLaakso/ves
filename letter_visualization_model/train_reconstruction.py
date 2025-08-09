@@ -1,12 +1,13 @@
 import os
 import torch
 from constants import hyperparams_list
-from model import ReconstructionModel
+from model import VisionTransformerForSegmentation
 import classif
 from dataset import SingleLetterSegmentationDataLoader, SingleLetterSegmentationDataset  # Updated imports
-from loss import SegmentationCombinedLoss, compute_classification_improvement_segmentation, BinarySegmentationLoss
+from loss import BinarySegmentationLoss
 from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
 import torch.nn.functional as F
+import settings
 
 PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rate decay
 
@@ -14,32 +15,32 @@ PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rat
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"training on {device}")
 
+# Diable anaomly detection
+torch.autograd.set_detect_anomaly(False)
+
+# Turn on the cuda auto timer
+torch.backends.cudnn.benchmark = False
+
+@torch.compile
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model=None):
     """
     Train the segmentation model with the fixed data pipeline.
     """
 
-    # Initialize model for segmentation: 8 channels in, 1 channel out
-    model = ReconstructionModel()
+    # Initialize model for segmentation: 1 channel in, 1 channel out, 32x32 output
+    model = VisionTransformerForSegmentation()
     model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
     # Use segmentation-specific loss
-    # criterion = SegmentationCombinedLoss(
-    #     dice_weight=1.0,      # Primary segmentation loss
-    #     ssim_weight=0.0,      # Structural similarity
-    #     acc_weight=0.0,       # Start with no classification feedback
-    #     acc_rel_delta=0.00,   # Gradually increase classification weight
-    #     segmentation_loss_type='dice'  # Use Dice loss for segmentation
-    # )
-
     criterion = BinarySegmentationLoss()
 
+    # levels = [0]
     # levels = [30, 100]
-    levels = [i for i in range(20, 31)]
+    levels = [i for i in range(1, 31)]
     for i in range(0, 2):
         levels.append(100)
 
@@ -63,19 +64,19 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         test_dataset = SingleLetterSegmentationDataset(level=level)
         test_dataset.dataset = [dataset[i] for i in test_indices]
 
-        # Create data loaders with the fixed pipeline
+        # Create data loaders WITHOUT synthetic channels - use single channel
         train_loader = SingleLetterSegmentationDataLoader(
             train_dataset,
             shuffle=True,
             device=device,
-            create_synthetic_channels=True  # Enable 8-channel creation
+            create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
         )
 
         test_loader = SingleLetterSegmentationDataLoader(
             test_dataset,
             shuffle=False,
             device=device,
-            create_synthetic_channels=True
+            create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
         )
 
         for epoch in range(num_epochs):
@@ -94,7 +95,16 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
                 try:
                     optimizer.zero_grad()
 
-                    # Forward pass - inputs are already 8-channel 128x128
+                    # CHANGED: Ensure inputs are single channel 128x128
+                    # Convert RGB to grayscale if needed
+                    if inputs.shape[1] == 3:  # RGB input
+                        inputs = torch.mean(inputs, dim=1, keepdim=True)  # Convert to grayscale
+
+                    # Ensure correct input format: [batch, 1, 128, 128]
+                    if inputs.shape[1] != 1:
+                        raise ValueError(f"Expected single channel input, got {inputs.shape[1]} channels")
+
+                    # Forward pass - inputs are now 1-channel 128x128
                     # targets are 1-channel 32x32 binary masks
                     outputs = model(inputs)
 
@@ -153,6 +163,13 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
             with torch.no_grad():
                 for inputs, targets, labels in test_loader:
                     try:
+                        # CHANGED: Apply same input processing for test data
+                        if inputs.shape[1] == 3:  # RGB input
+                            inputs = torch.mean(inputs, dim=1, keepdim=True)  # Convert to grayscale
+
+                        if inputs.shape[1] != 1:
+                            raise ValueError(f"Expected single channel input, got {inputs.shape[1]} channels")
+
                         outputs = model(inputs)
                         loss = criterion.forward(outputs, targets)
                         test_loss += loss.item()
@@ -191,7 +208,7 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
 
     return epoch_loss if 'epoch_loss' in locals() else 0.0, avg_test_loss if 'avg_test_loss' in locals() else 0.0
 
-
+@torch.compile
 def test_data_pipeline():
     """Test the data pipeline before training."""
     print("Testing data pipeline...")
@@ -201,28 +218,37 @@ def test_data_pipeline():
         dataset = SingleLetterSegmentationDataset(level=0)
         print(f"✓ Dataset loaded: {len(dataset.dataset)} items")
 
-        # Test dataloader
+        # Test dataloader - CHANGED: No synthetic channels
         dataloader = SingleLetterSegmentationDataLoader(
             dataset,
             device=device,
-            create_synthetic_channels=True
+            create_synthetic_channels=False  # CHANGED: Disable synthetic channels
         )
 
         # Test one batch
         for inputs, targets, labels in dataloader:
-            print(f"✓ Input shape: {inputs.shape} (expected: [batch_size, 8, 128, 128])")
+            print(f"✓ Raw input shape: {inputs.shape}")
             print(f"✓ Target shape: {targets.shape} (expected: [batch_size, 1, 32, 32])")
             print(f"✓ Labels count: {len(labels)}")
             print(f"✓ Input range: [{inputs.min():.3f}, {inputs.max():.3f}]")
             print(f"✓ Target range: [{targets.min():.3f}, {targets.max():.3f}]")
 
-            # Test model forward pass
-            model = ReconstructionModel()
+            # CHANGED: Convert to single channel if needed
+            if inputs.shape[1] == 3:  # RGB input
+                inputs = torch.mean(inputs, dim=1, keepdim=True)  # Convert to grayscale
+                print(f"✓ Converted to grayscale: {inputs.shape} (expected: [batch_size, 1, 128, 128])")
+
+            # Verify single channel
+            if inputs.shape[1] != 1:
+                raise ValueError(f"Expected single channel input after conversion, got {inputs.shape[1]} channels")
+
+            # Test model forward pass - CHANGED: Use correct parameters
+            model = VisionTransformerForSegmentation()
             model.to(device)
 
             with torch.no_grad():
                 outputs = model(inputs)
-                print(f"✓ Model output shape: {outputs.shape}")
+                print(f"✓ Model output shape: {outputs.shape} (expected: [batch_size, 1, 32, 32])")
                 print(f"✓ Model output range: [{outputs.min():.3f}, {outputs.max():.3f}]")
 
             break
@@ -236,18 +262,8 @@ def test_data_pipeline():
         traceback.print_exc()
         return False
 
-
-# Modified hyperparameters for segmentation
-segmentation_hyperparams = [
-    {
-        'batch_size': 16,  # Smaller batch size for 128x128 images
-        'learning_rate': 1e-4,  # Lower learning rate for segmentation
-        'num_epochs': 4,
-        'train_percent': 0.95,
-        'optimizer_class': torch.optim.Adam,
-        'bias_factor': 20.0
-    }
-]
+params = settings.segmentation_hyperparams._asdict()  # Convert to dict first
+train_loss, test_loss = train_model(**params)
 
 if __name__ == "__main__":
     print("Starting segmentation training...")
@@ -270,8 +286,8 @@ if __name__ == "__main__":
 
     print("\nTraining completed!")
     print("\nKey changes made:")
-    print("1. ✓ Fixed input: 3-channel RGB → 8-channel synthetic features")
+    print("1. ✓ Fixed input: 8-channel synthetic → 1-channel grayscale")
     print("2. ✓ Fixed input size: Variable → 128×128")
     print("3. ✓ Fixed output: RGB reconstruction → Binary segmentation (32×32)")
-    print("4. ✓ Fixed loss: MSE → Dice + SSIM + Classification feedback")
+    print("4. ✓ Fixed loss: MSE → Binary segmentation loss")
     print("5. ✓ Added comprehensive error handling and progress tracking")

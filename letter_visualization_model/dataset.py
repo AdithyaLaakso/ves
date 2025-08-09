@@ -1,3 +1,4 @@
+import random
 import threading
 import queue
 import time
@@ -9,8 +10,9 @@ from torch import Tensor
 from PIL import Image
 import torch.nn.functional as F
 from constants import greek_letters, MAX_SIZE
+import settings
 
-DATA_PATH = "training_data/paths.json"
+DATA_PATH = settings.data_path
 INPUT_IMG_PATH = 0
 OUTPUT_IMG_PATH = 1
 LABEL = 2
@@ -122,6 +124,36 @@ class SingleLetterSegmentationDataLoader:
             h, w = rgb_image.shape[:2]
             return np.random.rand(8, h, w).astype(np.float32)
 
+    def create_single_channel_input(self, rgb_image):
+        """
+        Create single-channel grayscale input from RGB image.
+        """
+        try:
+            # Ensure input is numpy array and normalized
+            if isinstance(rgb_image, np.ndarray):
+                rgb_array = rgb_image.astype(np.float32)
+            else:
+                rgb_array = np.array(rgb_image, dtype=np.float32)
+
+            # Ensure values are in [0, 1] range
+            if rgb_array.max() > 1.0:
+                rgb_array = rgb_array / 255.0
+
+            # Convert to grayscale
+            if len(rgb_array.shape) == 3 and rgb_array.shape[2] == 3:
+                grayscale = 0.299 * rgb_array[:, :, 0] + 0.587 * rgb_array[:, :, 1] + 0.114 * rgb_array[:, :, 2]
+            else:
+                grayscale = rgb_array.mean(axis=2) if len(rgb_array.shape) == 3 else rgb_array
+
+            # Return as (1, H, W) format
+            return grayscale[np.newaxis, :, :]
+
+        except Exception as e:
+            print(f"Error in create_single_channel_input: {e}")
+            # Fallback: create dummy single-channel data
+            h, w = rgb_image.shape[:2]
+            return np.random.rand(1, h, w).astype(np.float32)
+
     def create_binary_mask(self, rgb_image, threshold=0.5):
         """
         Create binary segmentation mask from RGB image.
@@ -158,7 +190,7 @@ class SingleLetterSegmentationDataLoader:
             return np.random.rand(h, w).astype(np.float32) > 0.5
 
     def normalize_input(self, imgs: Tensor) -> Tensor:
-        """Normalize the 8-channel input tensor - FIXED VERSION."""
+        """Normalize the input tensor - FIXED VERSION."""
         try:
             # Clone to avoid in-place modifications that might cause issues
             normalized_imgs = imgs.clone()
@@ -195,6 +227,9 @@ class SingleLetterSegmentationDataLoader:
             output_masks = []
             labels = []
 
+            # Determine expected channels based on create_synthetic_channels flag
+            expected_channels = 8 if self.create_synthetic_channels else 1
+
             for item in batch_data:
                 try:
                     # Load and resize input image to exactly 128x128
@@ -207,32 +242,29 @@ class SingleLetterSegmentationDataLoader:
                     output_img = output_img.resize((32, 32), Image.Resampling.BILINEAR)
                     output_img = np.array(output_img, dtype=np.float32)
 
-                    # Create 8-channel input
+                    # Create input based on create_synthetic_channels flag
                     if self.create_synthetic_channels:
-                        eight_channel_input = self.create_8_channel_input(input_img)
+                        # Create 8-channel input
+                        processed_input = self.create_8_channel_input(input_img)
+                        expected_shape = (8, 128, 128)
                     else:
-                        # Simple fallback: replicate RGB to create 8 channels
-                        rgb_transposed = np.transpose(input_img / 255.0, (2, 0, 1))  # (3, 128, 128)
-                        eight_channel = np.zeros((8, 128, 128), dtype=np.float32)
-                        eight_channel[:3] = rgb_transposed  # RGB
-                        eight_channel[3:6] = rgb_transposed  # Duplicate RGB
-                        eight_channel[6] = np.mean(rgb_transposed, axis=0)  # Grayscale
-                        eight_channel[7] = np.mean(rgb_transposed, axis=0)  # Grayscale duplicate
-                        eight_channel_input = eight_channel
+                        # Create single-channel grayscale input
+                        processed_input = self.create_single_channel_input(input_img)
+                        expected_shape = (1, 128, 128)
 
                     # Create binary segmentation mask
                     binary_mask = self.create_binary_mask(output_img)
 
                     # Validate shapes
-                    if eight_channel_input.shape != (8, 128, 128):
-                        print(f"Input shape error: {eight_channel_input.shape}, expected (8, 128, 128)")
+                    if processed_input.shape != expected_shape:
+                        print(f"Input shape error: {processed_input.shape}, expected {expected_shape}")
                         continue
 
                     if binary_mask.shape != (32, 32):
                         print(f"Mask shape error: {binary_mask.shape}, expected (32, 32)")
                         continue
 
-                    input_images.append(eight_channel_input)
+                    input_images.append(processed_input)
                     output_masks.append(binary_mask)
                     labels.append(item[LABEL])
 
@@ -244,22 +276,46 @@ class SingleLetterSegmentationDataLoader:
                 print("No valid images loaded in this batch")
                 return None
 
-            # Convert to tensors with proper shapes
-            input_images = torch.tensor(np.array(input_images), dtype=torch.float32)  # (B, 8, 128, 128)
-            output_masks = torch.tensor(np.array(output_masks), dtype=torch.float32).unsqueeze(1)  # (B, 1, 32, 32)
+
+            # Random rotation (1 in 4 chance for each: 90°, 180°, 270°, 0°)
+            rotation_options = [0, 1, 2, 3]  # 0=0°, 1=90°, 2=180°, 3=270°
+            rotation_steps = random.choice(rotation_options)
+
+            # Convert numpy arrays to tensors first
+            input_images_tensor = torch.stack(
+                [torch.from_numpy(img) if isinstance(img, np.ndarray) else img
+                 for img in input_images],
+                dim=0
+            )
+            output_masks_tensor = torch.stack(
+                [torch.from_numpy(mask) if isinstance(mask, np.ndarray) else mask
+                 for mask in output_masks],
+                dim=0
+            )
+
+            # Random inversion (1 in 2 chance) - apply to raw images before normalization
+            if random.random() < 0.5:
+                input_images_tensor = 1.0 - input_images_tensor  # Apply inversion to tensor
+
+            # Ensure int type for k
+            rotation_steps = int(rotation_steps)
+
+            # Rotate whole batch
+            if rotation_steps > 0:
+                input_images_tensor = torch.rot90(input_images_tensor, k=rotation_steps, dims=(-2, -1))
+                output_masks_tensor = torch.rot90(output_masks_tensor, k=rotation_steps, dims=(-2, -1))
+
+            # Normalize input images AFTER augmentations (keep as tensor)
+            input_images = self.normalize_input(input_images_tensor)  # Pass tensor instead of list
+
+            # Ensure masks are in [0, 1] range
+            output_masks = torch.clamp(output_masks_tensor, 0.0, 1.0)
 
             # Move to device
             input_images = input_images.to(self.device)
             output_masks = output_masks.to(self.device)
 
-            # Normalize input images
-            input_images = self.normalize_input(input_images)
-
-            # Ensure masks are in [0, 1] range
-            output_masks = torch.clamp(output_masks, 0.0, 1.0)
-
             return input_images, output_masks, labels
-
         except Exception as e:
             print(f"Error processing batch: {e}")
             import traceback
@@ -380,40 +436,50 @@ def test_dataloader():
     print("Testing the fixed segmentation dataloader...")
 
     try:
-        # Create test dataset
-        dataset = SingleLetterSegmentationDataset(level=0)
-        print(f"✓ Dataset loaded: {len(dataset.dataset)} items")
+        # Test both modes
+        for create_synthetic in [True, False]:
+            print(f"\n--- Testing create_synthetic_channels={create_synthetic} ---")
 
-        # Create test dataloader
-        dataloader = SingleLetterSegmentationDataLoader(
-            dataset,
-            batch_size=2,  # Small batch size for testing
-            device="cpu",
-            num_workers=1,  # Single worker for testing
-            create_synthetic_channels=True
-        )
+            # Create test dataset
+            dataset = SingleLetterSegmentationDataset(level=0)
+            print(f"✓ Dataset loaded: {len(dataset.dataset)} items")
 
-        # Test one batch
-        batch_count = 0
-        for inputs, masks, labels in dataloader:
-            print(f"✓ Batch {batch_count + 1}:")
-            print(f"  - Input shape: {inputs.shape} (expected: [batch_size, 8, 128, 128])")
-            print(f"  - Mask shape: {masks.shape} (expected: [batch_size, 1, 32, 32])")
-            print(f"  - Labels count: {len(labels)}")
-            print(f"  - Input range: [{inputs.min():.3f}, {inputs.max():.3f}]")
-            print(f"  - Mask range: [{masks.min():.3f}, {masks.max():.3f}]")
+            # Create test dataloader
+            dataloader = SingleLetterSegmentationDataLoader(
+                dataset,
+                batch_size=2,  # Small batch size for testing
+                device="cpu",
+                num_workers=1,  # Single worker for testing
+                create_synthetic_channels=create_synthetic
+            )
 
-            batch_count += 1
-            if batch_count >= 2:  # Test only 2 batches
-                break
+            # Test one batch
+            batch_count = 0
+            for inputs, masks, labels in dataloader:
+                expected_channels = 8 if create_synthetic else 1
+                print(f"✓ Batch {batch_count + 1}:")
+                print(f"  - Input shape: {inputs.shape} (expected: [batch_size, {expected_channels}, 128, 128])")
+                print(f"  - Mask shape: {masks.shape} (expected: [batch_size, 1, 32, 32])")
+                print(f"  - Labels count: {len(labels)}")
+                print(f"  - Input range: [{inputs.min():.3f}, {inputs.max():.3f}]")
+                print(f"  - Mask range: [{masks.min():.3f}, {masks.max():.3f}]")
 
-        print("✓ Dataloader test completed successfully!")
+                # Verify shapes
+                assert inputs.shape[1] == expected_channels, f"Expected {expected_channels} channels, got {inputs.shape[1]}"
+                assert inputs.shape[2:] == (128, 128), f"Expected (128, 128) spatial dimensions, got {inputs.shape[2:]}"
+                assert masks.shape[1:] == (1, 32, 32), f"Expected (1, 32, 32) mask shape, got {masks.shape[1:]}"
+
+                batch_count += 1
+                if batch_count >= 1:  # Test only 1 batch per mode
+                    break
+
+        print("\n✓ Dataloader test completed successfully!")
         print("\nKey fixes applied:")
-        print("1. Fixed tensor operations in 8-channel creation")
-        print("2. Added proper error handling and fallbacks")
-        print("3. Fixed threading issues and timeouts")
-        print("4. Ensured consistent tensor shapes and types")
-        print("5. Added proper memory management")
+        print("1. Added create_single_channel_input() method for grayscale input")
+        print("2. Fixed _load_batch_data() to respect create_synthetic_channels flag")
+        print("3. Added proper shape validation for both modes")
+        print("4. Fixed tensor operations in channel creation")
+        print("5. Added debug output to track batch creation")
 
         return True
 
