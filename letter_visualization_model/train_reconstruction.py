@@ -15,11 +15,6 @@ PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rat
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"training on {device}")
 
-# Diable anaomly detection
-torch.autograd.set_detect_anomaly(False)
-
-# Turn on the cuda auto timer
-torch.backends.cudnn.benchmark = False
 
 @torch.compile
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model=None):
@@ -33,18 +28,12 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=settings.learning_rate_gamma)
 
     # Use segmentation-specific loss
     criterion = BinarySegmentationLoss()
 
-    # levels = [1]
-    # levels = [30, 100]
-    levels = [i for i in range(1, 31)]
-    # for i in range(0, 2):
-    #     levels.append(100)
-
-    for level in levels:
+    for level in settings.levels:
         print(f"Training level: {level}")
 
         # Load dataset for this level using the new segmentation dataset
@@ -118,7 +107,6 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
                     # Track losses
                     running_loss += loss.item()
                     batch_count += 1
-
                     # Track loss components if available
                     if hasattr(criterion, 'last_loss_components'):
                         components = criterion.last_loss_components
@@ -262,32 +250,7 @@ def test_data_pipeline():
         traceback.print_exc()
         return False
 
-params = settings.segmentation_hyperparams._asdict()  # Convert to dict first
-train_loss, test_loss = train_model(**params)
 
 if __name__ == "__main__":
-    print("Starting segmentation training...")
-
-    # Test data pipeline first
-    if not test_data_pipeline():
-        print("Data pipeline test failed. Please fix the issues before training.")
-        exit(1)
-
-    # Train with segmentation-specific hyperparameters
-    for params in segmentation_hyperparams:
-        print(f"\nTraining with hyperparameters: {params}")
-        try:
-            train_loss, test_loss = train_model(**params)
-            print(f"Final Train Loss: {train_loss:.4f}, Final Test Loss: {test_loss:.4f}")
-        except Exception as e:
-            print(f"Training failed: {e}")
-            import traceback
-            traceback.print_exc()
-
-    print("\nTraining completed!")
-    print("\nKey changes made:")
-    print("1. ✓ Fixed input: 8-channel synthetic → 1-channel grayscale")
-    print("2. ✓ Fixed input size: Variable → 128×128")
-    print("3. ✓ Fixed output: RGB reconstruction → Binary segmentation (32×32)")
-    print("4. ✓ Fixed loss: MSE → Binary segmentation loss")
-    print("5. ✓ Added comprehensive error handling and progress tracking")
+    params = settings.segmentation_hyperparams._asdict()  # Convert to dict first
+    train_loss, test_loss = train_model(**params)

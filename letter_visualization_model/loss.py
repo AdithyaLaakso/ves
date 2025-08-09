@@ -276,6 +276,7 @@ class BinarySegmentationLoss(nn.Module):
         self.focal_alpha = settings.loss_settings.focal_alpha
         self.focal_gamma = settings.loss_settings.focal_gamma
         self.mse_loss = nn.MSELoss()
+        self.counter = 0
 
     def forward(self, pred_masks, target_masks):
         """
@@ -290,17 +291,37 @@ class BinarySegmentationLoss(nn.Module):
 
         loss = 0.0
 
+        dice, focal, boun, mse= 0, 0, 0, 0
+
         if self.dice_weight > 0:
-            loss += self.dice_weight * dice_loss(pred_probs, target_masks)
+            dice= self.dice_weight * dice_loss(pred_probs, target_masks)
+            loss += dice
+        else:
+            dice= 0
 
         if self.boundary_weight > 0:
-            loss += self.boundary_weight * boundary_loss(pred_probs, target_masks)
+            boun= self.boundary_weight * boundary_loss(pred_probs, target_masks)
+            loss += boun
+        else:
+            boun= 0
 
         if self.focal_weight > 0:
-            loss += self.focal_weight * focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
+            focal= self.focal_weight * focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
+            loss += focal
+        else:
+            focal= 0
 
         if self.mse_weight > 0:
-            loss += self.mse_weight * self.mse_loss(pred_probs, target_masks)
+            mse= self.mse_weight * self.mse_loss(pred_probs, target_masks)
+            loss += mse
+        else:
+            mse= 0
+
+        if self.counter == 20:
+            print(f"d: {dice}, b: {boun}, f: {focal}, m: {mse}")
+            self.counter = 0
+        else:
+            self.counter += 1
 
         return loss
 
@@ -354,15 +375,7 @@ def boundary_loss(pred, target, epsilon=1e-6):
 
     return loss / pred.shape[0]
 
-@lru_cache(maxsize=50)
-def get_disk_struct(radius):
-    return disk(radius)
-
-# Optional: cache for repeated identical masks
-_boundary_cache = {}
-MAX_CACHE_SIZE = 50
-
-def mask_to_boundary(mask, dilation_ratio=0.02, use_cache=True):
+def mask_to_boundary(mask, dilation_ratio=0.02, use_cache=False):
     if use_cache:
         mask_hash = hash(mask.tobytes())
         cache_key = (mask_hash, mask.shape, dilation_ratio)
@@ -389,50 +402,3 @@ def mask_to_boundary(mask, dilation_ratio=0.02, use_cache=True):
         _boundary_cache[cache_key] = result
 
     return result
-
-# Usage example
-if __name__ == "__main__":
-    # Test the segmentation loss functions
-    batch_size = 4
-
-    # Create dummy data
-    input_volumes = torch.rand(batch_size, 8, 128, 128)  # 8-channel input
-    pred_masks = torch.sigmoid(torch.rand(batch_size, 1, 32, 32))  # Predicted masks
-    target_masks = torch.round(torch.rand(batch_size, 1, 32, 32))  # Binary target masks
-    labels = torch.randint(0, 25, (batch_size,))  # Classification labels
-
-    # Test different loss functions
-    print("Testing segmentation loss functions:")
-
-    # Test Dice loss
-    dice_loss_val = dice_loss(pred_masks, target_masks)
-    print(f"Dice Loss: {dice_loss_val:.4f}")
-
-    # Test Focal loss
-    focal_loss_val = focal_loss(pred_masks, target_masks)
-    print(f"Focal Loss: {focal_loss_val:.4f}")
-
-    # Test biased MSE loss
-    biased_mse_val = binary_biased_mse_loss(pred_masks, target_masks)
-    print(f"Biased MSE Loss: {biased_mse_val:.4f}")
-
-    # Test SSIM loss
-    ssim_loss_fn = SSIMLoss()
-    ssim_loss_val = ssim_loss_fn(pred_masks, target_masks)
-    print(f"SSIM Loss: {ssim_loss_val:.4f}")
-
-    # Test combined loss
-    combined_loss_fn = SegmentationCombinedLoss(
-        dice_weight=2.0, mse_weight=0.0, ssim_weight=0.5,
-        acc_weight=0.0, segmentation_loss_type='dice'  # Disable classification loss for testing
-    )
-
-    combined_loss_val = combined_loss_fn(pred_masks, target_masks, input_volumes, labels, epoch=0)
-    print(f"Combined Loss: {combined_loss_val:.4f}")
-    print(f"Loss components: {combined_loss_fn.last_loss_components}")
-
-    print("\nTraining recommendations:")
-    print("- Use SegmentationCombinedLoss with dice_weight=2.0, ssim_weight=0.5")
-    print("- Start with acc_weight=0.0, gradually increase if classification feedback is needed")
-    print("- Monitor individual loss components for balanced training")
-    print("- Consider focal loss for highly imbalanced segmentation tasks")

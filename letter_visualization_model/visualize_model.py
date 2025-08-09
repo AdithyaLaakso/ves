@@ -4,6 +4,7 @@ import torch
 from torchvision import transforms
 from PIL import Image
 import matplotlib.pyplot as plt
+import settings
 
 from model import VisionTransformerForSegmentation
 
@@ -12,11 +13,12 @@ from model import VisionTransformerForSegmentation
 limit = 10  # Number of samples to visualize
 
 # Load paths
-with open('training_data/paths.json', 'r') as f:
+with open(settings.data_path, 'r') as f:
     paths_dict = json.load(f)
 
 # Filter level 30 examples
-level_30 = [i for i in paths_dict['paths'] if int(i[3]) == 1]
+level_30 = [i for i in paths_dict['paths'] if int(i[3]) in settings.levels]
+#level_30 = [i for i in paths_dict['paths'] if int(i[3]) == 30]
 # level_30 = data
 paths = random.sample(level_30, limit)
 
@@ -43,7 +45,7 @@ resize_for_display = transforms.Resize((128, 128), interpolation=transforms.Inte
 # Loop over samples
 shown_letters = set()
 
-for clean_path, noisy_path, letter, level in paths:
+for noisy_path, clean_path, letter, level in paths:
     if letter in shown_letters:
         continue
     shown_letters.add(letter)
