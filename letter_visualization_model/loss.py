@@ -7,6 +7,8 @@ import numpy as np
 import classif
 import constants
 import torchvision.models as models
+from functools import lru_cache
+import settings
 
 def binary_biased_mse_loss(predictions, targets, background_threshold=0.5, background_penalty_factor=3.0):
     """
@@ -260,132 +262,59 @@ def compute_classification_improvement_segmentation(input_volumes, predicted_mas
     accuracy_loss = accuracy_with_gt - accuracy_with_pred
     return accuracy_loss
 
-
-class SegmentationCombinedLoss(nn.Module):
-    """
-    Combined loss for segmentation that includes:
-    1. Segmentation quality (Dice/MSE/Focal)
-    2. SSIM for structural similarity
-    3. Classification accuracy preservation
-    """
-
-    def __init__(self, dice_weight=2.0, mse_weight=0.0, ssim_weight=0.0,
-                 acc_weight=0.0, acc_rel_delta=0.00, segmentation_loss_type='dice'):
-        super(SegmentationCombinedLoss, self).__init__()
-
-        self.dice_weight = dice_weight
-        self.mse_weight = mse_weight
-        self.ssim_weight = ssim_weight
-        self.acc_weight = acc_weight
-        self.acc_rel_delta = acc_rel_delta
-        self.segmentation_loss_type = segmentation_loss_type
-
-        # Initialize loss components
-        self.ssim_loss = SSIMLoss()
-
-        # Choose segmentation loss type
-        if segmentation_loss_type == 'dice':
-            self.seg_loss_fn = dice_loss
-        elif segmentation_loss_type == 'focal':
-            self.seg_loss_fn = focal_loss
-        elif segmentation_loss_type == 'biased_mse':
-            self.seg_loss_fn = binary_biased_mse_loss
-        elif segmentation_loss_type == 'BCELoss':
-            self.seg_loss_fn = BCELOSS
-        else:
-            self.seg_loss_fn = nn.MSELoss()
-
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-        # Load pre-trained classifier
-        self.classifier = None
-        try:
-            self.classifier = classif.SingleLetterModel(num_classes=25)
-            self.classifier.load_state_dict(torch.load("class.pth", weights_only=False))
-            self.classifier.to(self.device)
-            self.classifier.eval()
-        except:
-            print("Warning: Could not load classifier. Classification loss will be disabled.")
-
-    def forward(self, pred_masks, target_masks, input_volumes, labels, epoch=0):
-        """
-        Calculate combined segmentation loss.
-
-        Args:
-            pred_masks: Predicted segmentation masks [N, 1, 32, 32]
-            target_masks: Ground truth segmentation masks [N, 1, 32, 32]
-            input_volumes: Original input volumes [N, 8, 128, 128]
-            labels: Classification labels
-            epoch: Current training epoch
-        """
-        total_loss = 0.0
-        loss_components = {}
-
-        # 1. Segmentation quality loss
-        if self.segmentation_loss_type == 'dice':
-            seg_loss = self.seg_loss_fn(pred_masks, target_masks)
-            total_loss += self.dice_weight * seg_loss
-            loss_components['dice_loss'] = seg_loss.item()
-        elif self.segmentation_loss_type in ['biased_mse', 'focal']:
-            seg_loss = self.seg_loss_fn(pred_masks, target_masks)
-            total_loss += self.mse_weight * seg_loss
-            loss_components['seg_loss'] = seg_loss.item()
-        else:
-            mse_loss = F.mse_loss(pred_masks, target_masks)
-            total_loss += self.mse_weight * mse_loss
-            loss_components['mse_loss'] = mse_loss.item()
-
-        # 2. SSIM loss for structural similarity
-        ssim_loss = self.ssim_loss(pred_masks, target_masks)
-        total_loss += self.ssim_weight * ssim_loss
-        loss_components['ssim_loss'] = ssim_loss.item()
-
-        # 3. Classification accuracy preservation loss
-        if self.classifier is not None and self.acc_weight > 0:
-            try:
-                accuracy_loss = compute_classification_improvement_segmentation(
-                    input_volumes, pred_masks, target_masks, labels, self.classifier)
-
-                # Progressive weight increase with epoch
-                current_acc_weight = self.acc_weight + (self.acc_rel_delta * epoch)
-                total_loss += current_acc_weight * accuracy_loss
-                loss_components['accuracy_loss'] = accuracy_loss.item()
-                loss_components['acc_weight'] = current_acc_weight
-            except Exception as e:
-                print(f"Warning: Could not compute classification loss: {e}")
-                loss_components['accuracy_loss'] = 0.0
-
-        loss_components['total_loss'] = total_loss.item()
-
-        # Store loss components for logging
-        self.last_loss_components = loss_components
-
-        return total_loss
-
 class BinarySegmentationLoss(nn.Module):
     """
-    Binary segmentation loss combining Dice loss and Boundary loss.
+    Binary segmentation loss combining Dice, Boundary, Focal, and MSE losses.
     """
 
-    def __init__(self, dice_weight=1.0, boundary_weight=1.0):
+    def __init__(self):
         super(BinarySegmentationLoss, self).__init__()
-        self.dice_weight = dice_weight
-        self.boundary_weight = boundary_weight
+        self.dice_weight = settings.loss_settings.dice_weight
+        self.boundary_weight = settings.loss_settings.boundary_weight
+        self.focal_weight = settings.loss_settings.focal_weight
+        self.mse_weight = settings.loss_settings.mse_weight
+        self.focal_alpha = settings.loss_settings.focal_alpha
+        self.focal_gamma = settings.loss_settings.focal_gamma
+        self.mse_loss = nn.MSELoss()
 
     def forward(self, pred_masks, target_masks):
         """
-        Calculate combined Dice + Boundary segmentation loss.
+        Calculate combined loss.
 
         Args:
             pred_masks: Predicted segmentation masks [N, 1, H, W]
             target_masks: Ground truth segmentation masks [N, 1, H, W]
         """
-        dice = dice_loss(pred_masks, target_masks)
-        boundary = boundary_loss(pred_masks, target_masks)
+        pred_probs = torch.sigmoid(pred_masks)
+        target_masks = target_masks.float()
 
-        total_loss = self.dice_weight * dice + self.boundary_weight * boundary
-        return total_loss
+        loss = 0.0
 
+        if self.dice_weight > 0:
+            loss += self.dice_weight * dice_loss(pred_probs, target_masks)
+
+        if self.boundary_weight > 0:
+            loss += self.boundary_weight * boundary_loss(pred_probs, target_masks)
+
+        if self.focal_weight > 0:
+            loss += self.focal_weight * focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
+
+        if self.mse_weight > 0:
+            loss += self.mse_weight * self.mse_loss(pred_probs, target_masks)
+
+        return loss
+
+def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
+    """
+    Focal loss for binary segmentation.
+    """
+    pred = torch.clamp(pred, epsilon, 1.0 - epsilon)
+    bce = - (alpha * target * torch.log(pred) +
+             (1 - alpha) * (1 - target) * torch.log(1 - pred))
+    focal = (1 - pred) ** gamma * target * torch.log(pred) + \
+            pred ** gamma * (1 - target) * torch.log(1 - pred)
+    loss = -focal
+    return loss.mean()
 
 def dice_loss(pred, target, epsilon=1e-6):
     pred = pred.contiguous()
@@ -425,28 +354,41 @@ def boundary_loss(pred, target, epsilon=1e-6):
 
     return loss / pred.shape[0]
 
+@lru_cache(maxsize=50)
+def get_disk_struct(radius):
+    return disk(radius)
 
-def mask_to_boundary(mask, dilation_ratio=0.02):
-    """
-    Convert binary mask to boundary map using morphological dilation.
+# Optional: cache for repeated identical masks
+_boundary_cache = {}
+MAX_CACHE_SIZE = 50
 
-    Args:
-        mask: [H, W] numpy array
-    Returns:
-        boundary: [H, W] binary boundary map
-    """
+def mask_to_boundary(mask, dilation_ratio=0.02, use_cache=True):
+    if use_cache:
+        mask_hash = hash(mask.tobytes())
+        cache_key = (mask_hash, mask.shape, dilation_ratio)
+
+        if cache_key in _boundary_cache:
+            return _boundary_cache[cache_key]
 
     mask = mask.astype(np.uint8)
     h, w = mask.shape
     img_diag = (h ** 2 + w ** 2) ** 0.5
     dilation_radius = max(1, int(round(dilation_ratio * img_diag)))
-    struct = disk(dilation_radius)
 
+    struct = get_disk_struct(dilation_radius)  # Cached struct
     dilated = dilation(mask, struct)
     eroded = dilation(1 - mask, struct)
     boundary = dilated & eroded
 
-    return boundary.astype(np.uint8)
+    result = boundary.astype(np.uint8)
+
+    if use_cache:
+        # Simple cache size management
+        if len(_boundary_cache) >= MAX_CACHE_SIZE:
+            _boundary_cache.clear()
+        _boundary_cache[cache_key] = result
+
+    return result
 
 # Usage example
 if __name__ == "__main__":
