@@ -17,7 +17,7 @@ with open(settings.data_path, 'r') as f:
     paths_dict = json.load(f)
 
 # Filter level 30 examples
-level_30 = [i for i in paths_dict['paths'] if int(i[3]) in settings.levels]
+level_30 = [i for i in paths_dict['paths'] if int(i[3]) in settings.display_levels]
 #level_30 = [i for i in paths_dict['paths'] if int(i[3]) == 30]
 # level_30 = data
 paths = random.sample(level_30, limit)
