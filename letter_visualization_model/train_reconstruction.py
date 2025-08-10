@@ -1,20 +1,15 @@
 import os
 import torch
-from constants import hyperparams_list
-from model import VisionTransformerForSegmentation
-import classif
-from dataset import SingleLetterSegmentationDataLoader, SingleLetterSegmentationDataset  # Updated imports
-from loss import BinarySegmentationLoss
-from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
 import torch.nn.functional as F
-import settings
 
-PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rate decay
+import settings
+from dataset import SingleLetterSegmentationDataLoader, SingleLetterSegmentationDataset  # Updated imports
+from model import VisionTransformerForSegmentation
+from loss import BinarySegmentationLoss
 
 # select device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"training on {device}")
-
 
 @torch.compile
 def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model=None):
@@ -53,19 +48,20 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
         test_dataset = SingleLetterSegmentationDataset(level=level)
         test_dataset.dataset = [dataset[i] for i in test_indices]
 
-        # Create data loaders WITHOUT synthetic channels - use single channel
         train_loader = SingleLetterSegmentationDataLoader(
-            train_dataset,
-            shuffle=True,
-            device=device,
-            create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
+                train_dataset,
+                shuffle=True,
+                batch_size=batch_size,
+                device=device,
+                create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
         )
 
         test_loader = SingleLetterSegmentationDataLoader(
-            test_dataset,
-            shuffle=False,
-            device=device,
-            create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
+                test_dataset,
+                shuffle=False,
+                batch_size=batch_size,
+                device=device,
+                create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
         )
 
         for epoch in range(num_epochs):
@@ -107,17 +103,6 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
                     # Track losses
                     running_loss += loss.item()
                     batch_count += 1
-                    # Track loss components if available
-                    if hasattr(criterion, 'last_loss_components'):
-                        components = criterion.last_loss_components
-                        for key in running_components:
-                            if key in components:
-                                running_components[key] += components[key]
-
-                    # Print progress every 50 batches
-                    if batch_count % 50 == 0:
-                        avg_loss = running_loss / batch_count
-                        print(f"  Batch {batch_count}, Avg Loss: {avg_loss:.4f}")
 
                 except Exception as e:
                     print(f"Error in training batch: {e}")
@@ -132,7 +117,6 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
                     running_components[key] /= batch_count
 
                 print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}")
-                print(f"  Loss Components: {running_components}")
             else:
                 print(f"No valid batches in epoch {epoch+1}")
                 continue
@@ -140,14 +124,8 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
             # Evaluation on test set
             model.eval()
             test_loss = 0.0
-            test_batch_count = 0
-            test_components = {
-                'dice_loss': 0.0,
-                'ssim_loss': 0.0,
-                'accuracy_loss': 0.0,
-                'total_loss': 0.0
-            }
 
+            test_batch_count = 0
             with torch.no_grad():
                 for inputs, targets, labels in test_loader:
                     try:
@@ -163,24 +141,13 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
                         test_loss += loss.item()
                         test_batch_count += 1
 
-                        # Track test loss components
-                        if hasattr(criterion, 'last_loss_components'):
-                            components = criterion.last_loss_components
-                            for key in test_components:
-                                if key in components:
-                                    test_components[key] += components[key]
-
                     except Exception as e:
                         print(f"Error in test batch: {e}")
                         continue
 
             if test_batch_count > 0:
                 avg_test_loss = test_loss / test_batch_count
-                for key in test_components:
-                    test_components[key] /= test_batch_count
-
                 print(f"Test Loss: {avg_test_loss:.4f}")
-                print(f"  Test Components: {test_components}")
             else:
                 print("No valid test batches")
                 avg_test_loss = float('inf')
