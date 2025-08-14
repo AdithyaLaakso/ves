@@ -1,13 +1,14 @@
 import os
 import torch
 from constants import hyperparams_list
-from model import SingleLetterModel
-from dataset import SingleLetterDataset, SingleLetterDataLoader
+from model import ReconstructionModel
+from dataset import SingleLetterReconstructionDataLoader, SingleLetterReconstructionDataset
 from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
 import torch.nn.functional as F
+PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rate decay
 
 # dataset
-train_test_data = SingleLetterDataset()
+train_test_data = SingleLetterReconstructionDataset()
 dataset = train_test_data.dataset
 
 # select device
@@ -36,7 +37,7 @@ class CW_SSIM:
     def forward(self, output, target):
         return self.D(output, target, as_loss=True)
 
-def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0):
+def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model = None):
     # Split dataset into train and test sets
     train_size = int(train_percent * len(dataset))
     indices = torch.randperm(len(dataset))
@@ -45,13 +46,19 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
     train_dataset = [dataset[i] for i in train_indices]
     test_dataset = [dataset[i] for i in test_indices]
 
-    train_loader = SingleLetterDataLoader(train_dataset, batch_size=batch_size, shuffle=True, device=device)
-    test_loader = SingleLetterDataLoader(test_dataset, batch_size=batch_size, shuffle=False, device=device)
+    train_loader = SingleLetterReconstructionDataLoader(train_dataset, batch_size=batch_size, shuffle=True, device=device)
+    test_loader = SingleLetterReconstructionDataLoader(test_dataset, batch_size=batch_size, shuffle=False, device=device)
 
-    model = SingleLetterModel()
+    model = ReconstructionModel(pretrained_model)
     model.to(device)
+    # Exclude fc parameters from the second group to avoid duplication
+    fc_params = model.getFCParams()
+    pretrained_layers = model.getPretrainedParams()
+    optimizer = optimizer_class([
+        {'params': fc_params, 'lr': learning_rate},
+        {'params': pretrained_layers, 'lr': learning_rate/PRETRAIN_PROTECTOR}
+    ], lr=learning_rate)
     criterion = CW_SSIM(device=device)
-    optimizer = optimizer_class(model.parameters(), lr=learning_rate)
 
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}/{num_epochs}")
@@ -91,5 +98,10 @@ def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_
 
 for params in hyperparams_list:
     print(f"\nTraining with hyperparameters: {params}")
-    train_loss, test_loss = train_model(**params)
+    optimizer_name = params.get('optimizer_class').__name__ if hasattr(params.get('optimizer_class'), '__name__') else str(params.get('optimizer_class')).split(".")[-1].split("'")[0]
+    pretrained_model_path = f"trained_image_classification_models/trained_image_classification_model_{optimizer_name}.pth"
+    pretrained_model = None
+    if os.path.exists(pretrained_model_path):
+        pretrained_model = torch.load(pretrained_model_path, map_location=device, weights_only=False)
+    train_loss, test_loss = train_model(**params, pretrained_model=pretrained_model)
     print(f"Final Train Loss: {train_loss:.4f}, Final Test Loss: {test_loss:.4f}")
