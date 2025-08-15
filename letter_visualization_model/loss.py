@@ -1,4 +1,4 @@
-from scipy.ndimage import distance_transform_edt as distance
+from scipy.ndimage import distance_transform_edt
 from skimage.morphology import dilation, disk
 import torch
 import torch.nn as nn
@@ -9,265 +9,9 @@ import torchvision.models as models
 from functools import lru_cache
 import settings
 
-def binary_biased_mse_loss(predictions, targets, background_threshold=0.5, background_penalty_factor=3.0):
-    """
-    Biased MSE loss for binary segmentation that penalizes false negative predictions
-    (predicting background when target is foreground).
-
-    Args:
-        predictions: Model predictions (0-1 range after sigmoid)
-        targets: Ground truth binary masks (0-1 range)
-        background_threshold: Threshold below which predictions are considered background
-        background_penalty_factor: Penalty multiplier for false negatives
-    """
-    # Ensure tensors are on the same device
-    if isinstance(predictions, np.ndarray):
-        predictions = torch.from_numpy(predictions).float()
-    if isinstance(targets, np.ndarray):
-        targets = torch.from_numpy(targets).float()
-
-    # Standard MSE loss per pixel
-    mse = (predictions - targets) ** 2
-
-    # Identify false negative pixels (predicted background, actual foreground)
-    predicted_background = predictions < background_threshold
-    target_foreground = targets >= background_threshold
-    false_negative_mask = predicted_background & target_foreground
-
-    # Apply penalty to false negatives
-    penalty_weights = torch.where(false_negative_mask,
-                                 torch.full_like(mse, background_penalty_factor),
-                                 torch.ones_like(mse))
-
-    biased_mse = mse * penalty_weights
-    return biased_mse.mean()
-
-
-def dice_loss(predictions, targets, smooth=1e-6):
-    """
-    Dice loss for binary segmentation.
-
-    Args:
-        predictions: Model predictions (0-1 range after sigmoid)
-        targets: Ground truth binary masks (0-1 range)
-        smooth: Smoothing factor to avoid division by zero
-    """
-    # Flatten tensors
-    predictions = predictions.view(-1)
-    targets = targets.view(-1)
-
-    # Calculate intersection and union
-    intersection = (predictions * targets).sum()
-    dice_coeff = (2. * intersection + smooth) / (predictions.sum() + targets.sum() + smooth)
-
-    return 1 - dice_coeff
-
-
-def focal_loss(predictions, targets, alpha=0.25, gamma=2.0):
-    """
-    Focal loss for binary segmentation to handle class imbalance.
-
-    Args:
-        predictions: Model predictions (0-1 range after sigmoid)
-        targets: Ground truth binary masks (0-1 range)
-        alpha: Weighting factor for rare class
-        gamma: Focusing parameter
-    """
-    # Calculate binary cross entropy
-    bce = F.binary_cross_entropy(predictions, targets, reduction='none')
-
-    # Calculate p_t
-    p_t = predictions * targets + (1 - predictions) * (1 - targets)
-
-    # Calculate alpha_t
-    alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
-
-    # Calculate focal loss
-    focal_loss = alpha_t * (1 - p_t) ** gamma * bce
-
-    return focal_loss.mean()
-
-
-def create_gaussian_kernel(window_size, sigma):
-    """Create a 2D Gaussian kernel."""
-    coords = torch.arange(window_size, dtype=torch.float32)
-    coords -= window_size // 2
-
-    g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
-    g /= g.sum()
-
-    return g.outer(g)
-
-
-class SSIMLoss(nn.Module):
-    """
-    Structural Similarity Index Measure (SSIM) Loss for single-channel images
-    (adapted for binary segmentation masks)
-    """
-
-    def __init__(self, window_size=11, size_average=True, data_range=1.0,
-                 K=(0.01, 0.03), reduction='mean'):
-        super(SSIMLoss, self).__init__()
-        self.window_size = window_size
-        self.size_average = size_average
-        self.data_range = data_range
-        self.K = K
-        self.reduction = reduction
-
-        # Create Gaussian window
-        sigma = 1.5
-        self.window = create_gaussian_kernel(window_size, sigma)
-
-    def forward(self, img1, img2):
-        """
-        Calculate SSIM loss between two single-channel images.
-
-        Args:
-            img1, img2: Input images with shape [N, 1, H, W]
-
-        Returns:
-            SSIM loss (1 - SSIM index)
-        """
-        # Move window to the same device as input
-        if self.window.device != img1.device:
-            self.window = self.window.to(img1.device)
-
-        # Get image dimensions
-        N, C, H, W = img1.shape
-
-        # Create window for single channel
-        window = self.window.expand(C, 1, self.window_size, self.window_size)
-
-        # Constants
-        C1 = (self.K[0] * self.data_range) ** 2
-        C2 = (self.K[1] * self.data_range) ** 2
-
-        # Compute local means
-        mu1 = F.conv2d(img1, window, padding=self.window_size//2, groups=C)
-        mu2 = F.conv2d(img2, window, padding=self.window_size//2, groups=C)
-
-        mu1_sq = mu1.pow(2)
-        mu2_sq = mu2.pow(2)
-        mu1_mu2 = mu1 * mu2
-
-        # Compute local variances and covariance
-        sigma1_sq = F.conv2d(img1 * img1, window, padding=self.window_size//2, groups=C) - mu1_sq
-        sigma2_sq = F.conv2d(img2 * img2, window, padding=self.window_size//2, groups=C) - mu2_sq
-        sigma12 = F.conv2d(img1 * img2, window, padding=self.window_size//2, groups=C) - mu1_mu2
-
-        # Compute SSIM
-        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
-                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-
-        if self.reduction == 'mean':
-            ssim_value = ssim_map.mean()
-        elif self.reduction == 'sum':
-            ssim_value = ssim_map.sum()
-        else:  # 'none'
-            ssim_value = ssim_map.mean(dim=[1, 2, 3])  # Average over spatial and channel dims
-
-        # Return loss (1 - SSIM)
-        return 1 - ssim_value
-
-
-def compute_classification_accuracy_from_segmentation(input_volumes, segmentation_masks, true_labels, classifier,
-                                                    label_to_idx=constants.greek_letters):
-    """
-    Compute classification accuracy by applying segmentation masks to input volumes
-    and then classifying the masked result.
-
-    Args:
-        input_volumes: Original 8-channel input volumes [N, 8, 128, 128]
-        segmentation_masks: Predicted binary masks [N, 1, 32, 32]
-        true_labels: Ground truth classification labels
-        classifier: Pre-trained classification model
-    """
-    with torch.no_grad():
-        # Upsample segmentation masks to match input volume size
-        upsampled_masks = F.interpolate(segmentation_masks, size=(128, 128),
-                                      mode='bilinear', align_corners=False)
-
-        # Apply mask to input volumes (broadcast across all 8 channels)
-        masked_volumes = input_volumes * upsampled_masks
-
-        # Convert 8-channel volume to format expected by classifier
-        # This depends on your classifier's expected input format
-        # Option 1: Take first 3 channels and treat as RGB
-        if input_volumes.shape[1] >= 3:
-            classifier_input = masked_volumes[:, :3]  # Take first 3 channels
-        else:
-            # Option 2: Convert single/multi-channel to 3-channel by replication
-            classifier_input = masked_volumes[:, 0:1].repeat(1, 3, 1, 1)
-
-        # Resize to classifier's expected input size (assuming 32x32 or similar)
-        classifier_input = F.interpolate(classifier_input, size=(32, 32),
-                                       mode='bilinear', align_corners=False)
-
-        # Get predictions from classifier
-        predictions = classifier(classifier_input)
-        predicted_labels = torch.argmax(predictions, dim=1)
-
-        # Handle string labels
-        if isinstance(true_labels, list) and len(true_labels) > 0 and isinstance(true_labels[0], np.ndarray):
-            if label_to_idx is None:
-                raise ValueError("label_to_idx mapping required for string labels")
-            # Convert string labels to indices
-            numeric_labels = [label_to_idx[str(label)] for label in true_labels]
-            true_labels = torch.tensor(numeric_labels, device=input_volumes.device, dtype=torch.long)
-        else:
-            # Handle numeric labels
-            if not isinstance(true_labels, torch.Tensor):
-                true_labels = torch.tensor(true_labels, device=input_volumes.device)
-            if true_labels.dim() > 1:
-                true_labels = true_labels.squeeze()
-            true_labels = true_labels.long()
-
-        # Compute accuracy
-        correct = (predicted_labels == true_labels).float()
-        accuracy = correct.mean()
-
-    return accuracy
-
-
-def compute_classification_improvement_segmentation(input_volumes, predicted_masks, ground_truth_masks,
-                                                   true_labels, classifier=None):
-    """
-    Compute classification improvement by comparing accuracy with predicted vs ground truth masks.
-
-    Args:
-        input_volumes: Original 8-channel input volumes [N, 8, 128, 128]
-        predicted_masks: Predicted segmentation masks [N, 1, 32, 32]
-        ground_truth_masks: Ground truth segmentation masks [N, 1, 32, 32]
-        true_labels: Ground truth classification labels
-        classifier: Pre-trained classification model
-    """
-    if classifier is None:
-        # Load default classifier
-        tmp = classif.SingleLetterModel(num_classes=25)
-        tmp.load_state_dict(torch.load("class.pth", weights_only=False))
-        tmp.to(input_volumes.device)
-        tmp.eval()
-        classifier = tmp
-
-    # Compute accuracy with ground truth masks
-    accuracy_with_gt = compute_classification_accuracy_from_segmentation(
-        input_volumes, ground_truth_masks, true_labels, classifier)
-
-    # Compute accuracy with predicted masks
-    accuracy_with_pred = compute_classification_accuracy_from_segmentation(
-        input_volumes, predicted_masks, true_labels, classifier)
-
-    # Return accuracy loss (negative improvement)
-    accuracy_loss = accuracy_with_gt - accuracy_with_pred
-    return accuracy_loss
-
 class BinarySegmentationLoss(nn.Module):
-    """
-    Binary segmentation loss combining Dice, Boundary, Focal, and MSE losses.
-    """
-
     def __init__(self):
-        super(BinarySegmentationLoss, self).__init__()
+        super().__init__()
         self.dice_weight = settings.loss_settings.dice_weight
         self.boundary_weight = settings.loss_settings.boundary_weight
         self.focal_weight = settings.loss_settings.focal_weight
@@ -276,128 +20,134 @@ class BinarySegmentationLoss(nn.Module):
         self.focal_gamma = settings.loss_settings.focal_gamma
         self.mse_loss = nn.MSELoss()
         self.counter = 0
+        self.print_every_batches = settings.print_every_batches
 
+    @torch.compile
     def forward(self, pred_masks, target_masks):
-        """
-        Calculate combined loss.
-
-        Args:
-            pred_masks: Predicted segmentation masks [N, 1, H, W]
-            target_masks: Ground truth segmentation masks [N, 1, H, W]
-        """
-        pred_probs = torch.sigmoid(pred_masks)
         target_masks = target_masks.float()
+        pred_probs = torch.sigmoid(pred_masks)
 
-        loss = 0.0
+        # Compute all losses regardless of weight
+        dice_val = dice_loss(pred_probs, target_masks)
+        boundary_val = boundary_loss(pred_probs, target_masks)
+        #focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
+        #mse_val = self.mse_loss(pred_probs, target_masks)
 
-        dice, focal, boun, mse= 0, 0, 0, 0
+        # Weighted sum
+        loss = (
+                self.dice_weight * dice_val +
+                self.boundary_weight * boundary_val #+
+                #self.focal_weight * focal_val +
+                #self.mse_weight * mse_val
+        )
 
-        if self.dice_weight > 0:
-            dice= self.dice_weight * dice_loss(pred_probs, target_masks)
-            loss += dice
-        else:
-            dice= 0
-
-        if self.boundary_weight > 0:
-            boun= self.boundary_weight * boundary_loss(pred_probs, target_masks)
-            loss += boun
-        else:
-            boun= 0
-
-        if self.focal_weight > 0:
-            focal= self.focal_weight * focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
-            loss += focal
-        else:
-            focal= 0
-
-        if self.mse_weight > 0:
-            mse= self.mse_weight * self.mse_loss(pred_probs, target_masks)
-            loss += mse
-        else:
-            mse= 0
-
-        if self.counter == 20:
-            print(f"d: {dice}, b: {boun}, f: {focal}, m: {mse}")
+        # Optional: logging counter increment
+        self.counter += 1
+        if self.counter >= self.print_every_batches:
+            print(
+                f"d: {self.dice_weight * dice_val:.4f}, "
+                f"b: {self.boundary_weight * boundary_val:.4f}, "
+                #f"f: {self.focal_weight * focal_val:.4f}, "
+                #f"m: {self.mse_weight * mse_val:.4f}"
+            )
             self.counter = 0
-        else:
-            self.counter += 1
 
         return loss
 
+@torch.compile
 def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
-    """
-    Focal loss for binary segmentation.
-    """
     pred = torch.clamp(pred, epsilon, 1.0 - epsilon)
-    bce = - (alpha * target * torch.log(pred) +
-             (1 - alpha) * (1 - target) * torch.log(1 - pred))
-    focal = (1 - pred) ** gamma * target * torch.log(pred) + \
-            pred ** gamma * (1 - target) * torch.log(1 - pred)
-    loss = -focal
+    pt = pred * target + (1 - pred) * (1 - target)  # pt = p if target=1 else 1-p
+    alpha_t = alpha * target + (1 - alpha) * (1 - target)
+    loss = -alpha_t * (1 - pt) ** gamma * torch.log(pt)
     return loss.mean()
 
+@torch.compile
 def dice_loss(pred, target, epsilon=1e-6):
     pred = pred.contiguous()
     target = target.contiguous()
-
     intersection = (pred * target).sum(dim=(2, 3))
     union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
-
     dice = (2. * intersection + epsilon) / (union + epsilon)
     return 1 - dice.mean()
 
+@torch.compile
+def euclidean_distance_transform_torch(mask: torch.Tensor) -> torch.Tensor:
+    N, _, H, W = mask.shape
+    device = mask.device
 
-def boundary_loss(pred, target, epsilon=1e-6):
-    """
-    Computes boundary loss based on distance transform of target mask edges.
-    """
+    # Create coordinate grids
+    yy, xx = torch.meshgrid(torch.arange(H, device=device), torch.arange(W, device=device), indexing='ij')
+    coords = torch.stack((yy, xx), dim=0).float()  # (2, H, W)
 
-    pred_np = pred.detach().cpu().numpy()
-    target_np = target.detach().cpu().numpy()
-    loss = 0.0
+    dist_maps = []
+    for b in range(N):
+        fg = mask[b, 0] > 0.5  # (H, W)
 
-    for i in range(pred_np.shape[0]):
-        gt_mask = target_np[i, 0]
-        pred_mask = pred_np[i, 0]
+        if fg.sum() == 0:
+            # No foreground pixels - return max possible distance
+            max_dist = torch.sqrt(torch.tensor((H-1)**2 + (W-1)**2, device=device, dtype=torch.float32))
+            dist_maps.append(torch.full((1, H, W), max_dist, device=device))
+            continue
 
-        gt_boundary = mask_to_boundary(gt_mask)
-        pred_boundary = mask_to_boundary(pred_mask)
+        # Get coordinates of foreground pixels
+        fg_y, fg_x = torch.where(fg)  # Get actual coordinates
+        fg_coords = torch.stack([fg_y, fg_x], dim=1).float()  # (n_fg, 2)
 
-        # Distance transform of ground truth boundary
-        dt = distance(1 - gt_boundary)
+        # Create all pixel coordinates
+        all_coords = coords.permute(1, 2, 0).reshape(-1, 2)  # (H*W, 2)
 
-        pred_boundary = torch.tensor(pred_boundary, device=pred.device, dtype=pred.dtype)
-        dt = torch.tensor(dt, device=pred.device, dtype=pred.dtype)
+        # Compute distances from each pixel to all foreground pixels
+        # Using broadcasting: (H*W, 1, 2) - (1, n_fg, 2) = (H*W, n_fg, 2)
+        diff = all_coords.unsqueeze(1) - fg_coords.unsqueeze(0)
+        dist_sq = (diff ** 2).sum(dim=-1)  # (H*W, n_fg)
 
-        boundary_loss_sample = (pred_boundary * dt).mean()
-        loss += boundary_loss_sample
+        # Get minimum distance for each pixel
+        min_dist_sq = dist_sq.min(dim=1).values  # (H*W,)
+        dist_map = torch.sqrt(min_dist_sq).reshape(1, H, W)
 
-    return loss / pred.shape[0]
+        dist_maps.append(dist_map)
 
-def mask_to_boundary(mask, dilation_ratio=0.02, use_cache=False):
-    if use_cache:
-        mask_hash = hash(mask.tobytes())
-        cache_key = (mask_hash, mask.shape, dilation_ratio)
+    return torch.stack(dist_maps, dim=0)
 
-        if cache_key in _boundary_cache:
-            return _boundary_cache[cache_key]
+@torch.compile
+def compute_signed_distance_map_gpu(gt: torch.Tensor) -> torch.Tensor:
+    gt_bool = gt > 0.5
 
-    mask = mask.astype(np.uint8)
-    h, w = mask.shape
-    img_diag = (h ** 2 + w ** 2) ** 0.5
-    dilation_radius = max(1, int(round(dilation_ratio * img_diag)))
+    # Distance from outside pixels to boundary (positive outside object)
+    dist_outside = euclidean_distance_transform_torch(gt_bool.float().unsqueeze(1) if gt_bool.dim() == 3 else gt_bool)
 
-    struct = get_disk_struct(dilation_radius)  # Cached struct
-    dilated = dilation(mask, struct)
-    eroded = dilation(1 - mask, struct)
-    boundary = dilated & eroded
+    # Distance from inside pixels to boundary (will be negative inside object)
+    dist_inside = euclidean_distance_transform_torch((~gt_bool).float().unsqueeze(1) if gt_bool.dim() == 3 else (~gt_bool).float())
 
-    result = boundary.astype(np.uint8)
+    # Create signed distance map
+    phi_G = dist_outside.clone()
+    if gt_bool.dim() == 3:
+        phi_G[gt_bool.unsqueeze(1)] = -dist_inside[gt_bool.unsqueeze(1)]
+    else:
+        phi_G[gt_bool] = -dist_inside[gt_bool]
 
-    if use_cache:
-        # Simple cache size management
-        if len(_boundary_cache) >= MAX_CACHE_SIZE:
-            _boundary_cache.clear()
-        _boundary_cache[cache_key] = result
+    return phi_G
 
-    return result
+@torch.compile
+def boundary_loss(s_theta: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
+    phi_G = compute_signed_distance_map_gpu(g)
+    return (phi_G * s_theta).mean()
+
+# Debug version to test
+def debug_distance_transform():
+    # Create a simple test case
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # Create a simple 5x5 mask with a central square
+    gt = torch.zeros(1, 5, 5, device=device)
+    gt[0, 1:4, 1:4] = 1.0  # 3x3 square in center
+
+    print("Ground truth:")
+    print(gt[0])
+
+    phi_G = compute_signed_distance_map_gpu(gt)
+    print("\nSigned distance map:")
+    print(phi_G[0, 0])
+
+    return phi_G
