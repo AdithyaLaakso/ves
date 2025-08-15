@@ -28,7 +28,8 @@ model = VisionTransformerForSegmentation()
 model = model.to(device)
 
 # Load trained weights
-checkpoint_path = "trained_segmentation_models/trained_segmentation_model_Adam.pth"
+print(f"loading from {settings.display_from}")
+checkpoint_path = settings.display_from
 model.load_state_dict(torch.load(checkpoint_path, map_location=device))
 model.eval()
 
