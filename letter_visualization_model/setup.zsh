@@ -1,3 +1,5 @@
+#!/bin/zsh
+
 # ----------------------------
 # CPU / OpenMP / MKL settings
 # ----------------------------
@@ -11,7 +13,9 @@ export KMP_BLOCKTIME=0                    # Threads sleep immediately when idle 
 # ----------------------------
 # PyTorch / CUDA settings
 # ----------------------------
-export PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_mb:128,expandable_segments:True
+# export PYTORCH_CUDA_ALLOC_CONF=
+export PYTORCH_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_mb:128,expandable_segments:True
+export TORCH_DISABLE_TF32_LEGACY_API=1
 
 # ----------------------------
 # Optional PyTorch tuning
@@ -21,10 +25,14 @@ export CUDNN_BENCHMARK=1
 # ----------------------------
 # Logging
 # ----------------------------
-#export TORCH_LOGS=recompiles
-export TORCHDYNAMO_VERBOSE=1
 export TORCH_TRACE=./logs.txt
+# export TORCH_LOGS=
+# export TORCHDYNAMO_VERBOSE=
+# export TORCH_COMPILE_DEBUG=
 
-nvidia-smi -caa
+mkdir -p checkpoints/
+rm -f checkpoints/* &> /dev/null || true
+
+sudo nvidia-smi -caa
 
 python3 train_reconstruction.py && python3 visualize_model.py

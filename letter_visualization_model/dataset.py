@@ -25,6 +25,7 @@ class SegData(Dataset):
         self.dataset = self._load_dataset(level)
 
     def _load_dataset(self, level=0) -> List[List]:
+        print(level)
         with open(self.data_path, "r") as f:
             all_data = json.load(f)["paths"]
 
@@ -83,7 +84,8 @@ def create_loader(dataset, batch_size=32, shuffle=True, device=settings.device, 
         shuffle=shuffle,
         num_workers=num_workers,
         collate_fn=partial(collate_fn, device=device),
-        pin_memory=False
+        pin_memory=False,
+        persistent_workers=True
     )
 
     return loader

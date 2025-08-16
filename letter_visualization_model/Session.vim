@@ -13,12 +13,12 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
-badd +23 train_reconstruction.py
-badd +16 settings.py
-badd +55 loss.py
+badd +31 train_reconstruction.py
+badd +61 settings.py
+badd +14 loss.py
 badd +34 dataset.py
 badd +31 visualize_model.py
-badd +26 setup.zsh
+badd +27 setup.zsh
 badd +323404 ~/Documents/noise_source_prog/paths.json
 badd +279 model.py
 badd +1 datasetarchived.py
@@ -26,9 +26,9 @@ badd +1 ~/Documents/noise_source_prog/level_10_noisy_ALPHAform_100.bmp
 argglobal
 %argdel
 $argadd train_reconstruction.py
-edit settings.py
+edit loss.py
 argglobal
-balt setup.zsh
+balt settings.py
 setlocal foldmethod=manual
 setlocal foldexpr=0
 setlocal foldmarker={{{,}}}
@@ -39,12 +39,12 @@ setlocal foldnestmax=20
 setlocal foldenable
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 1 - ((0 * winheight(0) + 18) / 37)
+let s:l = 14 - ((13 * winheight(0) + 18) / 37)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 1
-normal! 0
+keepjumps 14
+normal! 038|
 lcd ~/Documents/ves/letter_visualization_model
 tabnext 1
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0 && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'
@@ -59,6 +59,7 @@ if filereadable(s:sx)
 endif
 let &g:so = s:so_save | let &g:siso = s:siso_save
 set hlsearch
+nohlsearch
 let g:this_session = v:this_session
 let g:this_obsession = v:this_session
 doautoall SessionLoadPost

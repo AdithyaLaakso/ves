@@ -64,7 +64,7 @@ class VisionTransformerInput(nn.Module):
         # in the input image. They correspond to the cosine similarity of embeddings
         # visualized in the paper "An Image is Worth 16x16 Words"
         # https://arxiv.org/pdf/2010.11929.pdf (Figure 7, Center).
-        self.position_embed = nn.Parameter(torch.zeros(num_patches, embed_size))
+        self.position_embed = nn.Parameter(torch.randn(num_patches, embed_size))
 
     # end def
 
@@ -238,13 +238,6 @@ class VisionTransformerForSegmentation(nn.Module):
         # Output projection
         x = self.output_projection(x)
         return x
-
-# Memory optimization utilities
-def get_memory_usage():
-    """Get current GPU memory usage"""
-    if torch.cuda.is_available():
-        return torch.cuda.memory_allocated() / 1024**3  # GB
-    return 0
 
 def debug_tensor_shapes(model, input_tensor):
 
