@@ -28,11 +28,14 @@ def train_epoch(model, loader, optimizer, criterion):
             outputs = model(inputs)
             loss = criterion(outputs, targets)
 
+        # loss.backward()
+        # optimizer.step()
+        # scaler = torch.cuda.amp.GradScaler()
         settings.scaler.scale(loss).backward()
         settings.scaler.step(optimizer)
         settings.scaler.update()
 
-        total_loss += loss
+        total_loss += loss.detach()
         n_batches += 1
 
     return total_loss / max(n_batches, 1)
@@ -48,9 +51,6 @@ def evaluate_epoch(model, loader, criterion):
             torch.cuda.empty_cache()
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
-
-            # Convert RGB to grayscale if needed (tensor operation only)
-            inputs = torch.where(inputs.shape[1] == 3, inputs.mean(dim=1, keepdim=True), inputs)
 
             outputs = model(inputs)
             loss = criterion(outputs, targets)
@@ -117,8 +117,8 @@ def train_model():
             train_loss = evaluate_epoch(model, test_loader, criterion)
 
             print(f"Epoch {epoch+1}/{settings.segmentation_hyperparams.num_epochs} | "
-                  f"Train Loss: {train_loss/len(train_loader):.4f} | "
-                  f"Test Loss: {test_loss/len(test_loader):.4f}")
+                  f"Train Loss: {train_loss/len(train_loader)} | "
+                  f"Test Loss: {test_loss/len(test_loader)}")
 
             scheduler.step()
 

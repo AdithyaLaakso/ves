@@ -292,7 +292,6 @@ def create_memory_efficient_vit(use_fp16=False):
         memory_efficient_attention=True
     )
 
-
     # Move to GPU if available
     if torch.cuda.is_available():
         model = model.cuda()
@@ -314,43 +313,3 @@ def create_memory_efficient_vit(use_fp16=False):
     model, optimizations = optimize_model_for_memory(model, dummy_input, use_fp16=use_fp16)
 
     return model
-
-# Training utilities for proper AMP usage
-def create_amp_training_setup():
-    """Create proper AMP training setup"""
-    # Use the new GradScaler API
-    try:
-        from torch.amp import GradScaler
-        scaler = GradScaler('cuda')
-    except ImportError:
-        # Fallback for older PyTorch versions
-        from torch.cuda.amp import GradScaler
-        scaler = GradScaler()
-
-    return scaler
-
-def amp_forward_pass(model, inputs, criterion, targets):
-    """Proper AMP forward pass"""
-    with torch.autocast(device_type='cuda', dtype=torch.float16):
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
-    return outputs, loss
-
-# Example training loop with proper AMP
-def train_step_with_amp(model, inputs, targets, optimizer, criterion, scaler):
-    """Single training step with AMP"""
-    optimizer.zero_grad()
-
-    # Forward pass with autocast
-    with torch.autocast(device_type='cuda', dtype=torch.float16):
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
-
-    # Backward pass with scaled loss
-    scaler.scale(loss).backward()
-
-    # Optimizer step with unscaling
-    scaler.step(optimizer)
-    scaler.update()
-
-    return loss.item(), outputs
