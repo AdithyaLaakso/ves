@@ -8,9 +8,10 @@ import constants
 import torchvision.models as models
 from functools import lru_cache
 import settings
+from torch.utils.tensorboard import SummaryWriter
 
 class BinarySegmentationLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, log_dir="logs/"):
         super().__init__()
         self.dice_weight = settings.loss_settings.dice_weight
         self.boundary_weight = settings.loss_settings.boundary_weight
@@ -19,54 +20,71 @@ class BinarySegmentationLoss(nn.Module):
         self.focal_alpha = settings.loss_settings.focal_alpha
         self.focal_gamma = settings.loss_settings.focal_gamma
         self.mse_loss = nn.MSELoss()
-        self.counter = 0
+
+        # optional TensorBoard writer
+        #self.writer = SummaryWriter(log_dir) if log_dir is not None else None
+        self.writer = None
+
+        # tracking moved outside forward (not compiled)
+        self._running_stats = {
+            "dice": 0.0,
+            "boundary": 0.0,
+            "focal": 0.0,
+        }
+        self._counter = 0
+        self._runner = 1
         self.print_every_batches = settings.print_every_batches
-
-        self.running_b_loss = 0
-        self.running_dice_loss = 0
-
-        self.runner = 1
 
     @torch.compile
     def forward(self, pred_masks, target_masks):
         target_masks = target_masks.float()
         pred_probs = torch.sigmoid(pred_masks)
 
-        # Compute all losses regardless of weight
+        # Compute all losses
         dice_val = dice_loss(pred_probs, target_masks)
         boundary_val = boundary_loss(pred_probs, target_masks)
-        #focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
-        #mse_val = self.mse_loss(pred_probs, target_masks)
+        focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
+        # mse_val = self.mse_loss(pred_probs, target_masks)
 
         # Weighted sum
         loss = (
-                self.dice_weight * dice_val +
-                self.boundary_weight * boundary_val #+
-                #self.focal_weight * focal_val +
-                #self.mse_weight * mse_val
+            self.dice_weight * dice_val +
+            self.boundary_weight * boundary_val +
+            self.focal_weight * focal_val
+            # + self.mse_weight * mse_val
         )
+        return loss, (dice_val.detach(), boundary_val.detach(), focal_val.detach())
 
-        # print(boundary_val.item())
+    def update_running_stats(self, dice_val, boundary_val, focal_val, global_step=None):
+        """Call this OUTSIDE forward() with detached values"""
+        self._running_stats["dice"] += self.dice_weight * dice_val
+        self._running_stats["boundary"] += self.boundary_weight * boundary_val
+        self._running_stats["focal"] += self.focal_weight * focal_val
 
-        self.running_dice_loss += self.dice_weight * dice_val.item()
-        self.running_b_loss += (self.boundary_weight * boundary_val.item())
+        self._counter += 1
+        if self._counter >= self.print_every_batches:
+            mean_d = self._running_stats["dice"] / self.print_every_batches
+            mean_b = self._running_stats["boundary"] / self.print_every_batches
+            mean_f = self._running_stats["focal"] / self.print_every_batches
 
-        # Optional: logging counter increment
-        self.counter += 1
-        if self.counter >= self.print_every_batches:
-            print(
-                f"({self.runner}): "
-                f"d: {self.running_dice_loss / self.print_every_batches:.4f}, "
-                f"b: {self.boundary_weight / self.print_every_batches:.4f}, "
-                #f"f: {self.focal_weight * focal_val:.4f}, "
-                #f"m: {self.mse_weight * mse_val:.4f}"
-            )
-            self.running_b_loss = 0
-            self.running_dice_loss = 0
-            self.counter = 0
-            self.runner += 1
+            if self.writer is not None and global_step is not None:
+                self.writer.add_scalar("Loss/Dice", mean_d, global_step)
+                self.writer.add_scalar("Loss/Boundary", mean_b, global_step)
+                self.writer.add_scalar("Loss/Focal", mean_f, global_step)
 
-        return loss
+            else:
+                # fallback to console print if no writer
+                print(
+                    f"({self._runner}): "
+                    f"d: {mean_d:.4f}, "
+                    f"b: {mean_b:.4f}, "
+                    f"f: {mean_f:.4f}"
+                )
+
+            # reset stats
+            self._running_stats = {"dice": 0.0, "boundary": 0.0, "focal": 0.0}
+            self._counter = 0
+            self._runner += 1
 
 @torch.compile
 def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
@@ -124,22 +142,13 @@ def euclidean_distance_transform_torch(mask: torch.Tensor) -> torch.Tensor:
 
     return torch.stack(dist_maps, dim=0)
 
+
 @torch.compile
 def compute_signed_distance_map_gpu(gt: torch.Tensor) -> torch.Tensor:
     gt_bool = gt > 0.5
-
-    # Distance from outside pixels to boundary (positive outside object)
-    dist_outside = euclidean_distance_transform_torch(gt_bool.float().unsqueeze(1) if gt_bool.dim() == 3 else gt_bool)
-
-    # Distance from inside pixels to boundary (will be negative inside object)
-    dist_inside = euclidean_distance_transform_torch((~gt_bool).float().unsqueeze(1) if gt_bool.dim() == 3 else (~gt_bool).float())
-
-    # Create signed distance map
-    phi_G = dist_outside.clone()
-    if gt_bool.dim() == 3:
-        phi_G[gt_bool.unsqueeze(1)] = -dist_inside[gt_bool.unsqueeze(1)]
-    else:
-        phi_G[gt_bool] = -dist_inside[gt_bool]
+    dist_outside = euclidean_distance_transform_torch(gt_bool.float())
+    dist_inside = euclidean_distance_transform_torch((~gt_bool).float())
+    phi_G = torch.where(gt_bool, -dist_inside, dist_outside)
 
     return phi_G
 
@@ -147,21 +156,3 @@ def compute_signed_distance_map_gpu(gt: torch.Tensor) -> torch.Tensor:
 def boundary_loss(s_theta: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
     phi_G = compute_signed_distance_map_gpu(g)
     return (phi_G * s_theta).mean()
-
-# Debug version to test
-def debug_distance_transform():
-    # Create a simple test case
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    # Create a simple 5x5 mask with a central square
-    gt = torch.zeros(1, 5, 5, device=device)
-    gt[0, 1:4, 1:4] = 1.0  # 3x3 square in center
-
-    print("Ground truth:")
-    print(gt[0])
-
-    phi_G = compute_signed_distance_map_gpu(gt)
-    print("\nSigned distance map:")
-    print(phi_G[0, 0])
-
-    return phi_G
