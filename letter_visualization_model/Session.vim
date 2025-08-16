@@ -13,21 +13,22 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
-badd +79 train_reconstruction.py
-badd +44 settings.py
-badd +153 loss.py
-badd +17 dataset.py
+badd +23 train_reconstruction.py
+badd +16 settings.py
+badd +55 loss.py
+badd +34 dataset.py
 badd +31 visualize_model.py
-badd +21 setup.zsh
-badd +3 ~/Documents/noise_source_prog/paths.json
-badd +138 model.py
+badd +26 setup.zsh
+badd +323404 ~/Documents/noise_source_prog/paths.json
+badd +279 model.py
 badd +1 datasetarchived.py
+badd +1 ~/Documents/noise_source_prog/level_10_noisy_ALPHAform_100.bmp
 argglobal
 %argdel
 $argadd train_reconstruction.py
 edit settings.py
 argglobal
-balt dataset.py
+balt setup.zsh
 setlocal foldmethod=manual
 setlocal foldexpr=0
 setlocal foldmarker={{{,}}}
