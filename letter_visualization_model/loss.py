@@ -22,6 +22,11 @@ class BinarySegmentationLoss(nn.Module):
         self.counter = 0
         self.print_every_batches = settings.print_every_batches
 
+        self.running_b_loss = 0
+        self.running_dice_loss = 0
+
+        self.runner = 1
+
     @torch.compile
     def forward(self, pred_masks, target_masks):
         target_masks = target_masks.float()
@@ -41,16 +46,25 @@ class BinarySegmentationLoss(nn.Module):
                 #self.mse_weight * mse_val
         )
 
+        # print(boundary_val.item())
+
+        self.running_dice_loss += self.dice_weight * dice_val.item()
+        self.running_b_loss += (self.boundary_weight * boundary_val.item())
+
         # Optional: logging counter increment
         self.counter += 1
         if self.counter >= self.print_every_batches:
             print(
-                f"d: {self.dice_weight * dice_val:.4f}, "
-                f"b: {self.boundary_weight * boundary_val:.4f}, "
+                f"({self.runner}): "
+                f"d: {self.running_dice_loss / self.print_every_batches:.4f}, "
+                f"b: {self.boundary_weight / self.print_every_batches:.4f}, "
                 #f"f: {self.focal_weight * focal_val:.4f}, "
                 #f"m: {self.mse_weight * mse_val:.4f}"
             )
+            self.running_b_loss = 0
+            self.running_dice_loss = 0
             self.counter = 0
+            self.runner += 1
 
         return loss
 

@@ -18,6 +18,13 @@ export PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_m
 # ----------------------------
 export CUDNN_BENCHMARK=1
 
+# ----------------------------
+# Logging
+# ----------------------------
+#export TORCH_LOGS=recompiles
+export TORCHDYNAMO_VERBOSE=1
+export TORCH_TRACE=./logs.txt
+
 nvidia-smi -caa
 
 python3 train_reconstruction.py && python3 visualize_model.py
