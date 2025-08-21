@@ -1,17 +1,85 @@
-from scipy.ndimage import distance_transform_edt
-from skimage.morphology import dilation, disk
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-import constants
-import torchvision.models as models
-from functools import lru_cache
-import settings
 from torch.utils.tensorboard import SummaryWriter
 
+import settings
+
+epsilon = 1e-6
+
+class MetaLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.BSL = BinarySegmentationLoss()
+
+        self.meta_add_weight = settings.meta_add_weight
+        self.meta_div_weight = settings.meta_div_weight
+
+        self.meta_f_weight = settings.meta_f_weight
+        self.meta_b_weight = settings.meta_b_weight
+        self.meta_m_weight = settings.meta_m_weight
+        self.meta_d_weight = settings.meta_d_weight
+
+        self.writer = SummaryWriter(settings.log_dir) if settings.log_dir is not None else None
+
+        # tracking moved outside forward (not compiled)
+        self._running_stats = {
+            "dice": 0.0,
+            "boundary": 0.0,
+            "focal": 0.0,
+            "mse": 0.0
+        }
+        self._counter = 0
+        self._runner = 1
+        self.print_every_batches = settings.print_every_batches
+        self.global_step = 1
+
+    @torch.compile
+    def operation(self, a, b):
+        add = (a - b) * self.meta_add_weight
+        div = (a / torch.sqrt(b + epsilon)) * self.meta_div_weight
+        return (add + div) / (self.meta_add_weight + self.meta_div_weight)
+
+    @torch.compile
+    def forward(self, input, pred, target):
+        before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
+        after, (a_d, a_b, a_f, a_m) = self.BSL(pred, target)
+
+        f_d = self.operation(a_d, b_d / self.meta_d_weight)
+        f_b = self.operation(a_b, b_b / self.meta_b_weight)
+        f_f = self.operation(a_f, b_f / self.meta_f_weight)
+        #f_m = self.operation(a_m, b_m / self.meta_m_weight)
+        # final = (f_d + f_b + f_f + f_m)
+        final = (f_d + f_b + f_f)
+
+        self.update_running_stats(f_d, f_b, f_f, 0)
+        self.global_step += 1
+
+        return final
+
+    @torch.compile
+    def update_running_stats(self, dice_val, boundary_val, focal_val, mse_val):
+        self._running_stats["dice"] += dice_val
+        self._running_stats["boundary"] += boundary_val
+        self._running_stats["focal"] += focal_val
+        self._running_stats["mse"] += mse_val
+
+        # self._counter += 1
+        # if self._counter >= self.print_every_batches:
+        mean_d = self._running_stats["dice"]
+        mean_b = self._running_stats["boundary"]
+        mean_f = self._running_stats["focal"]
+        mean_m = self._running_stats["mse"]
+        mean_total = mean_d + mean_b + mean_m + mean_f
+
+        # if self.writer is not None and global_step is not None:
+        self.writer.add_scalar("Loss/Dice", mean_d / self.global_step, self.global_step)
+        self.writer.add_scalar("Loss/Boundary", mean_b / self.global_step, self.global_step)
+        self.writer.add_scalar("Loss/Focal", mean_f / self.global_step, self.global_step)
+        self.writer.add_scalar("Loss/MSE", mean_m / self.global_step, self.global_step)
+        self.writer.add_scalar("Loss/total", mean_total / self.global_step, self.global_step)
+
 class BinarySegmentationLoss(nn.Module):
-    def __init__(self, log_dir="logs/"):
+    def __init__(self):
         super().__init__()
         self.dice_weight = settings.loss_settings.dice_weight
         self.boundary_weight = settings.loss_settings.boundary_weight
@@ -21,73 +89,34 @@ class BinarySegmentationLoss(nn.Module):
         self.focal_gamma = settings.loss_settings.focal_gamma
         self.mse_loss = nn.MSELoss()
 
-        # optional TensorBoard writer
-        #self.writer = SummaryWriter(log_dir) if log_dir is not None else None
-        self.writer = None
-
-        # tracking moved outside forward (not compiled)
-        self._running_stats = {
-            "dice": 0.0,
-            "boundary": 0.0,
-            "focal": 0.0,
-        }
-        self._counter = 0
-        self._runner = 1
-        self.print_every_batches = settings.print_every_batches
 
     @torch.compile
-    def forward(self, pred_masks, target_masks):
+    def forward(self, pred_masks, target_masks) -> tuple[float, tuple[float, float, float, float]]:
         target_masks = target_masks.float()
         pred_probs = torch.sigmoid(pred_masks)
+        #pred_porbs = pred_masks
 
         # Compute all losses
-        dice_val = dice_loss(pred_probs, target_masks)
-        boundary_val = boundary_loss(pred_probs, target_masks)
-        focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma)
-        # mse_val = self.mse_loss(pred_probs, target_masks)
+        dice_val = dice_loss(pred_probs, target_masks) * self.dice_weight
+        boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
+        focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
+        pred_probs = torch.nn.functional.interpolate(pred_probs, size=target_masks.shape[-2:], mode='bilinear', align_corners=False)
+        mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
 
         # Weighted sum
         loss = (
-            self.dice_weight * dice_val +
-            self.boundary_weight * boundary_val +
-            self.focal_weight * focal_val
-            # + self.mse_weight * mse_val
+            dice_val +
+            boundary_val +
+            focal_val +
+            mse_val
         )
-        return loss, (dice_val.detach(), boundary_val.detach(), focal_val.detach())
 
-    def update_running_stats(self, dice_val, boundary_val, focal_val, global_step=None):
-        """Call this OUTSIDE forward() with detached values"""
-        self._running_stats["dice"] += self.dice_weight * dice_val
-        self._running_stats["boundary"] += self.boundary_weight * boundary_val
-        self._running_stats["focal"] += self.focal_weight * focal_val
+        return loss, (dice_val, boundary_val, focal_val, mse_val)
 
-        self._counter += 1
-        if self._counter >= self.print_every_batches:
-            mean_d = self._running_stats["dice"] / self.print_every_batches
-            mean_b = self._running_stats["boundary"] / self.print_every_batches
-            mean_f = self._running_stats["focal"] / self.print_every_batches
-
-            if self.writer is not None and global_step is not None:
-                self.writer.add_scalar("Loss/Dice", mean_d, global_step)
-                self.writer.add_scalar("Loss/Boundary", mean_b, global_step)
-                self.writer.add_scalar("Loss/Focal", mean_f, global_step)
-
-            else:
-                # fallback to console print if no writer
-                print(
-                    f"({self._runner}): "
-                    f"d: {mean_d:.4f}, "
-                    f"b: {mean_b:.4f}, "
-                    f"f: {mean_f:.4f}"
-                )
-
-            # reset stats
-            self._running_stats = {"dice": 0.0, "boundary": 0.0, "focal": 0.0}
-            self._counter = 0
-            self._runner += 1
 
 @torch.compile
 def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
+    pred = torch.nn.functional.interpolate(pred, size=target.shape[-2:], mode='bilinear', align_corners=False)
     pred = torch.clamp(pred, epsilon, 1.0 - epsilon)
     pt = pred * target + (1 - pred) * (1 - target)  # pt = p if target=1 else 1-p
     alpha_t = alpha * target + (1 - alpha) * (1 - target)
@@ -95,13 +124,15 @@ def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
     return loss.mean()
 
 @torch.compile
-def dice_loss(pred, target, epsilon=1e-6):
-    pred = pred.contiguous()
-    target = target.contiguous()
-    intersection = (pred * target).sum(dim=(2, 3))
-    union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
-    dice = (2. * intersection + epsilon) / (union + epsilon)
-    return 1 - dice.mean()
+def dice_loss(pred, target):
+    # pred = torch.nn.functional.interpolate(pred, size=target.shape[-2:], mode='bilinear', align_corners=False)
+    # pred = pred.contiguous()
+    # target = target.contiguous()
+    # intersection = (pred * target).sum(dim=(2, 3))
+    # union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
+    # dice = (2. * intersection + epsilon) / (union + epsilon)
+    # return 1 - dice.mean()
+    return nn.BCELoss(pred, target)
 
 @torch.compile
 def euclidean_distance_transform_torch(mask: torch.Tensor) -> torch.Tensor:
@@ -154,5 +185,7 @@ def compute_signed_distance_map_gpu(gt: torch.Tensor) -> torch.Tensor:
 
 @torch.compile
 def boundary_loss(s_theta: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
+    s_theta = torch.nn.functional.interpolate(s_theta, size=g.shape[-2:], mode='bilinear', align_corners=False)
     phi_G = compute_signed_distance_map_gpu(g)
-    return (phi_G * s_theta).mean()
+    loss = torch.mean(torch.abs(phi_G * s_theta))
+    return loss
