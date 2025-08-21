@@ -3,18 +3,17 @@ import signal
 import sys
 
 import torch
-import torch.nn.functional as F
 from torch.utils.data import Subset
-from torch.utils.checkpoint import checkpoint_sequential
 
 import settings
 import dataset
-from model import VisionTransformerForSegmentation, create_memory_efficient_vit
-from loss import BinarySegmentationLoss
-from torch.amp import autocast, GradScaler
-
+#from model import create_enhanced_memory_efficient_vit as create_memory_efficient_vit
+from model import build_model
+from loss import MetaLoss
+from torch.amp.grad_scaler import GradScaler
 
 #don't cook my vram and require a reboot if I SIGINT
+
 def signal_handler(sig, frame):
     print('Cleaning up...')
     torch.cuda.empty_cache()
@@ -22,29 +21,29 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-def train_epoch(model, loader, optimizer, criterion, scaler=None):
+def train_epoch(model, loader, optimizer, criterion, scaler):
     total_loss = torch.zeros(1, device=device)
     n_batches = 0
 
     model.train()
 
-    step = 0
     for inputs, targets in loader:
         torch.cuda.empty_cache()
         optimizer.zero_grad()
-        with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
-            outputs = model(inputs)
-            loss, (d, b, f) = criterion(outputs, targets)
+        outputs = model(inputs)
+        loss = criterion(inputs, outputs, targets)
 
-        criterion.update_running_stats(d,b,f,step)
-
+        # print(loss)
         scaler.scale(loss).backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
 
-        total_loss += loss.detach()
+        total_loss += loss
         n_batches += 1
-        step += 1
+        # if step % settings.print_every_batches == 0:
+        #     path = f"{settings.save_to_dir}/{step // settings.print_every_batches}.pth"
+        #     torch.save(model.state_dict(), path)
 
     return total_loss / max(n_batches, 1)
 
@@ -60,7 +59,7 @@ def evaluate_epoch(model, loader, criterion):
             targets = targets.to(device, non_blocking=True)
 
             outputs = model(inputs)
-            loss, _ = criterion(outputs, targets)
+            loss = criterion(inputs, outputs, targets)
 
             total_loss += loss
             n_batches += 1
@@ -69,7 +68,7 @@ def evaluate_epoch(model, loader, criterion):
 
 
 def train_model():
-    model = create_memory_efficient_vit(use_fp16=True)
+    model = build_model()
 
     model.to(device)
 
@@ -79,9 +78,9 @@ def train_model():
     scaler = GradScaler(device)
 
     compiled_train_epoch = torch.compile(train_epoch)
-    compiled_eval_epoch = torch.compile(evaluate_epoch)
+    compiled_evaluate_epoch = torch.compile(evaluate_epoch)
 
-    criterion = BinarySegmentationLoss()
+    criterion = MetaLoss()
 
     print(f"training levels: {settings.levels}")
     for level in settings.levels:
@@ -93,6 +92,7 @@ def train_model():
         data = dataset.SegData(level=level)
 
         n_total = len(data)
+        print(f"training with {n_total} items")
 
         if n_total == 0:
             raise ValueError("Dataset is empty!")
@@ -115,17 +115,16 @@ def train_model():
             shuffle=False,
         )
 
-
         for epoch in range(settings.segmentation_hyperparams.num_epochs):
-            test_loss = train_epoch(
+            train_loss = compiled_train_epoch(
                 model,
                 train_loader,
                 optimizer,
                 criterion,
-                scaler=scaler
+                scaler
             )
 
-            train_loss = evaluate_epoch(model, test_loader, criterion)
+            test_loss = compiled_evaluate_epoch(model, test_loader, criterion)
 
             print(f"Epoch {epoch+1}/{settings.segmentation_hyperparams.num_epochs} | "
                   f"Train Loss: {train_loss/len(train_loader)} | "
