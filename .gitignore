@@ -7,6 +7,6 @@ hand_writing_dataset/
 *.png
 bruh*
 *.vim
-logs/*
-logs_archive
+*logs/*
+*logs_archive
 *.stamp
