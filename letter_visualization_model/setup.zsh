@@ -26,7 +26,7 @@ export CUDNN_BENCHMARK=1
 # ----------------------------
 export TORCH_TRACE=./logs.txt
 # export TORCH_LOGS=
-# export TORCHDYNAMO_VERBOSE=
+export TORCHDYNAMO_VERBOSE=1
 # export TORCH_COMPILE_DEBUG=
 
 mkdir -p checkpoints/
