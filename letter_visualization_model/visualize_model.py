@@ -6,7 +6,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import settings
 
-from model import VisionTransformerForSegmentation
+from model import build_model
+
 
 # from constants import hyperparams_list  # Optional, not used here
 
@@ -27,7 +28,7 @@ paths = random.sample(vals, limit)
 
 # Initialize model
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = VisionTransformerForSegmentation()
+model = build_model()
 model = model.to(device)
 
 # Load trained weights
@@ -87,21 +88,21 @@ if settings.track_levels:
         axs[0, 1].set_title('Model Output (Color)')
         axs[0, 1].axis('off')
 
-        # axs[0, 2].imshow(clean_img)
-        # axs[0, 2].set_title('Clean Target')
-        # axs[0, 2].axis('off')
+        axs[0, 2].imshow(clean_img)
+        axs[0, 2].set_title('Clean Target')
+        axs[0, 2].axis('off')
 
-        # axs[1, 0].imshow(noisy_img.convert("L"), cmap='gray')
-        # axs[1, 0].set_title('Noisy (Grayscale)')
-        # axs[1, 0].axis('off')
+        axs[1, 0].imshow(noisy_img.convert("L"), cmap='gray')
+        axs[1, 0].set_title('Noisy (Grayscale)')
+        axs[1, 0].axis('off')
 
         axs[1, 1].imshow(output_img.convert("L"), cmap='gray')
         axs[1, 1].set_title('Model Output (Grayscale)')
         axs[1, 1].axis('off')
-        #
-        # axs[1, 2].imshow(clean_img.convert("L"), cmap='gray')
-        # axs[1, 2].set_title('Clean Target (Grayscale)')
-        # axs[1, 2].axis('off')
+
+        axs[1, 2].imshow(clean_img.convert("L"), cmap='gray')
+        axs[1, 2].set_title('Clean Target (Grayscale)')
+        axs[1, 2].axis('off')
 
         plt.tight_layout()
         plt.show()
@@ -174,4 +175,3 @@ else:
         print(f"Input range: [{input_tensor.min():.4f}, {input_tensor.max():.4f}]")
         print(f"Output range: [{output.min():.4f}, {output.max():.4f}]")
         print("-" * 50)
-
