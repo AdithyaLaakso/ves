@@ -80,6 +80,9 @@ def train_model():
     compiled_train_epoch = torch.compile(train_epoch)
     compiled_evaluate_epoch = torch.compile(evaluate_epoch)
 
+    # compiled_train_epoch = train_epoch
+    # compiled_evaluate_epoch = evaluate_epoch
+
     criterion = MetaLoss()
 
     print(f"training levels: {settings.levels}")

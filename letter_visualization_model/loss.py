@@ -11,7 +11,6 @@ class MetaLoss(nn.Module):
         super().__init__()
         self.BSL = BinarySegmentationLoss()
 
-        self.meta_add_weight = settings.meta_add_weight
         self.meta_div_weight = settings.meta_div_weight
 
         self.meta_f_weight = settings.meta_f_weight
@@ -35,26 +34,28 @@ class MetaLoss(nn.Module):
 
     @torch.compile
     def operation(self, a, b):
-        add = (a - b) * self.meta_add_weight
-        div = (a / torch.sqrt(b + epsilon)) * self.meta_div_weight
-        return (add + div) / (self.meta_add_weight + self.meta_div_weight)
+        # div = (a / torch.sqrt(b + epsilon)) * self.meta_div_weight
+        # return (div) / (self.meta_add_weight + self.meta_div_weight) + self.meta_s * a
+        return a
 
     @torch.compile
     def forward(self, input, pred, target):
-        before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
+        # before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
         after, (a_d, a_b, a_f, a_m) = self.BSL(pred, target)
 
-        f_d = self.operation(a_d, b_d / self.meta_d_weight)
-        f_b = self.operation(a_b, b_b / self.meta_b_weight)
-        f_f = self.operation(a_f, b_f / self.meta_f_weight)
+        # f_d = self.operation(a_d, b_d / self.meta_d_weight)
+        # f_b = self.operation(a_b, b_b / self.meta_b_weight)
+        # f_f = self.operation(a_f, b_f / self.meta_f_weight)
         #f_m = self.operation(a_m, b_m / self.meta_m_weight)
         # final = (f_d + f_b + f_f + f_m)
-        final = (f_d + f_b + f_f)
+        # final = (f_d + f_b + f_f)
+        # final = (f_d + f_b + f_f)
 
-        self.update_running_stats(f_d, f_b, f_f, 0)
-        self.global_step += 1
+        # self.update_running_stats(f_d, f_b, f_f, 0)
+        self.update_running_stats(a_d, a_b, a_f, a_m)
+        self.global_step = self.global_step + 1
 
-        return final
+        return after
 
     @torch.compile
     def update_running_stats(self, dice_val, boundary_val, focal_val, mse_val):
@@ -88,6 +89,7 @@ class BinarySegmentationLoss(nn.Module):
         self.focal_alpha = settings.loss_settings.focal_alpha
         self.focal_gamma = settings.loss_settings.focal_gamma
         self.mse_loss = nn.MSELoss()
+        self.d = nn.BCELoss()
 
 
     @torch.compile
@@ -97,7 +99,7 @@ class BinarySegmentationLoss(nn.Module):
         #pred_porbs = pred_masks
 
         # Compute all losses
-        dice_val = dice_loss(pred_probs, target_masks) * self.dice_weight
+        dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
         boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
         pred_probs = torch.nn.functional.interpolate(pred_probs, size=target_masks.shape[-2:], mode='bilinear', align_corners=False)
@@ -124,7 +126,7 @@ def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
     return loss.mean()
 
 @torch.compile
-def dice_loss(pred, target):
+def dice_loss(pred, target, loss):
     # pred = torch.nn.functional.interpolate(pred, size=target.shape[-2:], mode='bilinear', align_corners=False)
     # pred = pred.contiguous()
     # target = target.contiguous()
@@ -132,7 +134,8 @@ def dice_loss(pred, target):
     # union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
     # dice = (2. * intersection + epsilon) / (union + epsilon)
     # return 1 - dice.mean()
-    return nn.BCELoss(pred, target)
+    pred = torch.nn.functional.interpolate(pred, size=target.shape[-2:], mode='bilinear', align_corners=False)
+    return loss(pred, target)
 
 @torch.compile
 def euclidean_distance_transform_torch(mask: torch.Tensor) -> torch.Tensor:
