@@ -314,7 +314,7 @@ class SingleLetterSegmentationDataLoader:
             # Move to device
             input_images = input_images.to(self.device)
             output_masks = output_masks.to(self.device)
-
+            
             return input_images, output_masks, labels
         except Exception as e:
             print(f"Error processing batch: {e}")
