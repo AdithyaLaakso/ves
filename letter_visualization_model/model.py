@@ -255,7 +255,6 @@ class MultiScaleDecoder(nn.Module):
         # Final resize to 128x128
         output = F.interpolate(output, size=(128, 128), mode='bilinear', align_corners=True)
         return output
-
 class MultiScaleVisionTransformerInput(nn.Module):
     def __init__(self, image_size, in_channels, embed_size, patch_sizes):
         super().__init__()
