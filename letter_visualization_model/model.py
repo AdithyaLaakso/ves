@@ -186,13 +186,37 @@ class VisionTransformerInput(nn.Module):
         x = x + pos_enc
         return x, (self.n_h, self.n_w)
 
-class MultiScaleDecoder(nn.Module):
-    """Fixed decoder with explicit spatial tracking"""
+class ConvDecoder(nn.Module):
+    """Simple CNN for spatial reconstruction"""
+    def __init__(self, in_chans, out_chans):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(in_chans, 64, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, out_chans, 3, padding=1)
+        )
 
+    def forward(self, x):
+        return self.net(x)
+
+class MultiScaleDecoder(nn.Module):
+    """Decoder with learned CNN-based reconstruction"""
     def __init__(self, embed_dim=128, out_chans=1):
         super().__init__()
-        self.coarse_proj = nn.Linear(embed_dim, 8*8*out_chans)
-        self.fine_proj = nn.Linear(embed_dim, 4*4*out_chans)
+        self.out_chans = out_chans
+
+        # Linear projections from tokens
+        self.coarse_proj = nn.Linear(embed_dim, embed_dim)
+        self.fine_proj = nn.Linear(embed_dim, embed_dim)
+
+        # CNNs for two streams
+        self.coarse_cnn = ConvDecoder(embed_dim, out_chans)
+        self.fine_cnn = ConvDecoder(embed_dim, out_chans)
+
+        # Fusion CNN
+        self.fusion_cnn = ConvDecoder(2*out_chans, out_chans)
 
     def forward(self, tokens, HcWc, HfWf, mask_flat, B):
         Hc, Wc = HcWc
@@ -201,65 +225,35 @@ class MultiScaleDecoder(nn.Module):
 
         coarse_tokens, fine_tokens = tokens[:, :Nc], tokens[:, Nc:]
 
-        # === CRITICAL FIX: Explicit spatial reconstruction ===
+        # --- Coarse stream ---
+        coarse_features = self.coarse_proj(coarse_tokens)  # [B, Nc, C]
+        coarse_map = coarse_features.view(B, Hc, Wc, -1).permute(0, 3, 1, 2)  # [B, C, Hc, Wc]
+        coarse_map = F.interpolate(coarse_map, scale_factor=8, mode='bilinear', align_corners=True)
+        coarse_out = self.coarse_cnn(coarse_map)  # [B, out_chans, H, W]
 
-        # Project to patch features
-        coarse_features = self.coarse_proj(coarse_tokens)  # [B, Nc, 64*out_chans]
-        coarse_patches = coarse_features.view(B, Nc, -1, 8, 8)  # [B, Nc, C, 8, 8]
-
-        # Create output tensor with explicit spatial placement
-        coarse_output = torch.zeros(B, coarse_patches.shape[2], Hc*8, Wc*8,
-                                  device=tokens.device, dtype=tokens.dtype)
-
-        # EXPLICIT spatial placement - no assumptions about token order
-        for patch_idx in range(Nc):
-            # Calculate ACTUAL spatial position of this patch
-            patch_row = patch_idx // Wc
-            patch_col = patch_idx % Wc
-
-            # Place patch at correct spatial location
-            row_start, row_end = patch_row * 8, (patch_row + 1) * 8
-            col_start, col_end = patch_col * 8, (patch_col + 1) * 8
-
-            coarse_output[:, :, row_start:row_end, col_start:col_end] = \
-                coarse_patches[:, patch_idx]
-
-        # Fine tokens with explicit spatial tracking
-        fine_output = torch.zeros_like(coarse_output)
+        # --- Fine stream ---
+        fine_map = torch.zeros(B, fine_tokens.shape[-1], Hf, Wf,
+                               device=tokens.device, dtype=tokens.dtype)
 
         for b in range(B):
             if mask_flat[b].sum() > 0:
-                num_fine_tokens = mask_flat[b].sum().item()
-                fine_features = self.fine_proj(fine_tokens[b, :num_fine_tokens])
-                fine_patches = fine_features.view(num_fine_tokens, -1, 4, 4)
-
-                # Get actual spatial coordinates for fine patches
+                num_fine = mask_flat[b].sum().item()
+                fine_feats = self.fine_proj(fine_tokens[b, :num_fine])  # [num_fine, C]
                 fine_positions = mask_flat[b].nonzero(as_tuple=False).squeeze(-1)
 
                 for k, pos in enumerate(fine_positions):
-                    # Convert flat position to 2D coordinates
-                    patch_row = pos // Wf
-                    patch_col = pos % Wf
+                    r, c = divmod(pos.item(), Wf)
+                    fine_map[b, :, r, c] = fine_feats[k]
 
-                    # Map to output coordinates (fine patches are 4x4)
-                    row_start = patch_row * 4
-                    row_end = row_start + 4
-                    col_start = patch_col * 4
-                    col_end = col_start + 4
+        fine_out = self.fine_cnn(fine_map)  # [B, out_chans, Hf, Wf]
+        fine_out = F.interpolate(fine_out, size=coarse_out.shape[-2:], mode='bilinear', align_corners=True)
 
-                    # Ensure we don't go out of bounds
-                    if (row_end <= fine_output.shape[2] and
-                        col_end <= fine_output.shape[3]):
-                        fine_output[b, :, row_start:row_end, col_start:col_end] = \
-                            fine_patches[k]
+        # --- Fusion ---
+        fused = torch.cat([coarse_out, fine_out], dim=1)  # [B, 2*out_chans, H, W]
+        output = self.fusion_cnn(fused)
 
-        # Combine with proper blending
-        combined = coarse_output + fine_output
-
-        # Final upsampling with proper alignment
-        output = F.interpolate(combined, size=(128, 128),
-                             mode='bilinear', align_corners=True)
-
+        # Final resize to 128x128
+        output = F.interpolate(output, size=(128, 128), mode='bilinear', align_corners=True)
         return output
 
 class MultiScaleVisionTransformerInput(nn.Module):

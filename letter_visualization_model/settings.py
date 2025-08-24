@@ -13,14 +13,14 @@ mp.set_start_method('spawn', force=True)
 torch.autograd.set_detect_anomaly(False)
 torch.backends.cudnn.benchmark = True
 
-torch.backends.fp32_precision = "tf32"
-torch.backends.cuda.matmul.fp32_precision = "tf32"
-torch.backends.cudnn.fp32_precision = "tf32"
-torch.backends.cudnn.conv.fp32_precision = "tf32"
-torch.backends.cudnn.rnn.fp32_precision = "tf32"
-
-# torch.backends.cuda.matmul.allow_tf32 = True
-# torch.backends.cudnn.allow_tf32 = True
+# torch.backends.fp32_precision = "tf32"
+# torch.backends.cuda.matmul.fp32_precision = "tf32"
+# torch.backends.cudnn.fp32_precision = "tf32"
+# torch.backends.cudnn.conv.fp32_precision = "tf32"
+# torch.backends.cudnn.rnn.fp32_precision = "tf32"
+#
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 dynamo.config.recompile_limit = 8
 dynamo.config.accumulated_recompile_limit = 8
@@ -53,7 +53,7 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 
 segmentation_hyperparams = SegmentationHyperparams(
     num_epochs=10,
-    batch_size=8,
+    batch_size=4,
     learning_rate=8e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
@@ -105,7 +105,7 @@ save_every_print = True
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
 # display_from = save_to
-display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/21-5.pth"
+display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/21-4.pth"
 
 load_from = save_to
 
