@@ -29,11 +29,15 @@ class SegData(Dataset):
         with open(self.data_path, "r") as f:
             all_data = json.load(f)["paths"]
 
+        filtered = []
         # Limit dataset size
         if MAX_SIZE is not None:
             if len(all_data) > MAX_SIZE:
+                print("here")
+                print(len(all_data))
                 idx = np.random.choice(len(all_data), MAX_SIZE, replace=False)
                 filtered = [all_data[i] for i in idx]
+                print(len(filtered))
             else:
                 filtered = all_data
         else:
@@ -42,17 +46,18 @@ class SegData(Dataset):
         # Filter by level
         if settings.track_levels:
             if isinstance(level, list):
-                filtered = [item for item in all_data if int(item[3]) in level]
+                filtered = [item for item in filtered if int(item[3]) in level]
             else:
-                filtered = [item for item in all_data if int(item[3]) == level]
+                filtered = [item for item in filtered if int(item[3]) == level]
         else:
-            filtered = [item for item in all_data]
+            filtered = [item for item in filtered]
 
         filtered = [item for item in filtered if item[2] in settings.letters]
 
         # Filter out missing files
         filtered = [item for item in filtered if Path(settings.add_to_path + item[0]).exists() and Path(settings.add_to_path + item[1]).exists()]
 
+        print(len(filtered))
         return filtered
 
     def __len__(self):

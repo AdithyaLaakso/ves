@@ -14,7 +14,7 @@ from torch.amp.grad_scaler import GradScaler
 
 #don't cook my vram and require a reboot if I SIGINT
 
-def signal_handler(sig, frame):
+def signal_handler(*_):
     print('Cleaning up...')
     torch.cuda.empty_cache()
     sys.exit(0)
@@ -68,14 +68,14 @@ def evaluate_epoch(model, loader, criterion):
 
 
 def train_model():
-    model = build_model()
+    model = build_model(compile_model=True)
 
     model.to(device)
 
     optimizer = settings.segmentation_hyperparams.optimizer_class(model.parameters())
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=settings.learning_rate_gamma)
 
-    scaler = GradScaler(device)
+    scaler = GradScaler()
 
     compiled_train_epoch = torch.compile(train_epoch)
     compiled_evaluate_epoch = torch.compile(evaluate_epoch)

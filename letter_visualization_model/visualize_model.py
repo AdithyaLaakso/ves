@@ -28,13 +28,11 @@ paths = random.sample(vals, limit)
 
 # Initialize model
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = build_model()
+model = build_model(compile_model=False, load_from=settings.display_from)
 model = model.to(device)
 
 # Load trained weights
 print(f"loading from {settings.display_from}")
-checkpoint_path = settings.display_from
-model.load_state_dict(torch.load(checkpoint_path, map_location=device))
 model.eval()
 
 # Preprocessing: Resize to 128x128 and ensure tensor format
@@ -45,7 +43,7 @@ preprocess = transforms.Compose([
 ])
 
 # Resize outputs for easier viewing
-resize_for_display = transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.NEAREST)
+resize_for_display = transforms.Resize((32, 32), interpolation=transforms.InterpolationMode.NEAREST)
 
 # Loop over samples
 shown_letters = set()
@@ -73,6 +71,7 @@ if settings.track_levels:
             output = model(input_tensor)
 
         output = output.squeeze(0).squeeze(0).cpu()  # [1, 1, 32, 32] -> [32, 32]
+
         # output = (output > 0.5).int()
         output_img = transforms.ToPILImage()(output)
         output_img = resize_for_display(output_img)

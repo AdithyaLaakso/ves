@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import settings
 from torch.utils.checkpoint import checkpoint
+
 def tokens_to_map(x, n_h, n_w):
     # x: (B, N, C) -> (B, C, H, W)
     B, N, C = x.shape
@@ -14,6 +15,67 @@ def map_to_tokens(x):
     # x: (B, C, H, W) -> (B, H*W, C)
     B, C, H, W = x.shape
     return x.flatten(2).transpose(1, 2)
+
+def compute_edge_map(x):
+    gray = x.mean(dim=1, keepdim=True)
+    sobel_x = F.conv2d(gray, torch.tensor([[[[-1,0,1],[-2,0,2],[-1,0,1]]]],
+                       device=x.device, dtype=x.dtype), padding=1)
+    sobel_y = F.conv2d(gray, torch.tensor([[[[-1,-2,-1],[0,0,0],[1,2,1]]]],
+                       device=x.device, dtype=x.dtype), padding=1)
+    edges = torch.sqrt(sobel_x**2 + sobel_y**2)
+    edges = F.avg_pool2d(edges, 4, stride=4)  # downsample
+    return edges
+
+class PatchEmbed(nn.Module):
+    def __init__(self, patch_size=8, stride=8, embed_dim=128, in_chans=1):
+        super().__init__()
+        self.patch_size = patch_size
+        self.stride = stride
+        self.embed_dim = embed_dim
+        self.proj = nn.Conv2d(in_chans, embed_dim,
+                              kernel_size=patch_size, stride=stride)
+
+    def forward(self, x):
+        patches = self.proj(x)  # [B, C, H', W']
+        B, C, H, W = patches.shape
+        patches = patches.flatten(2).transpose(1, 2)  # [B, HW, C]
+        return patches, (H, W)
+
+class MultiScalePatchEmbed(nn.Module):
+    def __init__(self, embed_dim=128, in_chans=1):
+        super().__init__()
+        csize, fsize = settings.patch_sizes
+        self.coarse = PatchEmbed(csize, csize, embed_dim, in_chans)
+        self.fine   = PatchEmbed(fsize, fsize, embed_dim, in_chans)
+        self.type_embed = nn.Embedding(2, embed_dim)  # 0=coarse, 1=fine
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+
+        # --- Coarse ---
+        coarse_tokens, (Hc, Wc) = self.coarse(x)
+        coarse_type = self.type_embed(torch.zeros(
+            (B, coarse_tokens.size(1)), device=x.device, dtype=torch.long))
+        coarse_tokens = coarse_tokens + coarse_type
+
+        # --- Fine ---
+        edges = compute_edge_map(x)   # [B,1,H/4,W/4]
+        mask = edges > edges.mean(dim=[2,3], keepdim=True)
+        fine_tokens, (Hf, Wf) = self.fine(x)
+
+        mask_up = F.interpolate(mask.float(), size=(Hf, Wf), mode="nearest")
+        mask_flat = mask_up.flatten(1).bool()
+
+        fine_list = []
+        for b in range(B):
+            fine_list.append(fine_tokens[b][mask_flat[b]])
+        fine_tokens = nn.utils.rnn.pad_sequence(fine_list, batch_first=True)
+        fine_type = self.type_embed(torch.ones(
+            (B, fine_tokens.size(1)), device=x.device, dtype=torch.long))
+        fine_tokens = fine_tokens + fine_type
+
+        tokens = torch.cat([coarse_tokens, fine_tokens], dim=1)  # [B, N_total, C]
+        return tokens, (Hc, Wc), (Hf, Wf), mask_flat
 
 class RelativePositionBias(nn.Module):
     def __init__(self, window_size, num_heads):
@@ -56,7 +118,7 @@ class Attention(nn.Module):
     def _ensure_bias(self, B, heads, N, device, dtype):
         if (self.global_bias is None) or (self.global_bias.shape[0] < N) or (self.global_bias.shape[1] < N):
             size = max(N, 1024)  # avoid frequent re-allocs; cap can be larger if you like
-            self.global_bias = nn.Parameter(torch.zeros(size, size, device=device, dtype=dtype))
+            self.global_bias = nn.Parameter(torch.zeros(size, size, device=settings.device, dtype=dtype))
         return self.global_bias[:N, :N]
 
     def forward(self, x):
@@ -70,10 +132,10 @@ class Attention(nn.Module):
         attn_scores = (q @ k.transpose(-2, -1)) * self.scale  # (B, heads, N, N)
 
         if self.relative_position_bias is not None:
-            rpb = self.relative_position_bias().to(dtype=attn_scores.dtype, device=attn_scores.device)
+            rpb = self.relative_position_bias().to(dtype=attn_scores.dtype, device=settings.device)
             attn_scores = attn_scores + rpb.unsqueeze(0)
 
-        gb = self._ensure_bias(B, self.num_heads, N, attn_scores.device, attn_scores.dtype)
+        gb = self._ensure_bias(B, self.num_heads, N, settings.device, attn_scores.dtype)
         attn_scores = attn_scores + gb.unsqueeze(0)
 
         attn = attn_scores.softmax(dim=-1)
@@ -81,36 +143,30 @@ class Attention(nn.Module):
         out = self.proj(out)
         return out
 
-def get_2d_sinusoidal_encoding(n_h, n_w, d_model):
-    """
-    n_h: number of patches along height
-    n_w: number of patches along width
-    d_model: embedding dimension (must be even)
-    Returns: (n_h*n_w, d_model)
-    """
-    assert d_model % 4 == 0, "d_model must be divisible by 4 for 2D sinusoidal encoding"
+# Fix 1: Improved positional encoding with boundary normalization
+def get_2d_sinusoidal_encoding_fixed(n_h, n_w, d_model):
+    """Fixed version with better boundary handling"""
+    assert d_model % 4 == 0
 
     pe = torch.zeros(n_h, n_w, d_model)
-
-    # Split embedding dimension across row and col encodings
-    d_model_half = d_model // 2
     d_model_quarter = d_model // 4
 
-    div_term_row = torch.exp(torch.arange(0, d_model_quarter, 2) * -(math.log(10000.0) / d_model_quarter))
-    div_term_col = torch.exp(torch.arange(0, d_model_quarter, 2) * -(math.log(10000.0) / d_model_quarter))
+    # Use normalized positions to avoid boundary effects
+    pos_row = torch.linspace(0, 1, n_h).unsqueeze(1)
+    pos_col = torch.linspace(0, 1, n_w).unsqueeze(1)
 
-    pos_row = torch.arange(n_h).unsqueeze(1)  # (n_h, 1)
-    pos_col = torch.arange(n_w).unsqueeze(1)  # (n_w, 1)
+    div_term = torch.exp(torch.arange(0, d_model_quarter, 2) *
+                        -(math.log(10000.0) / d_model_quarter))
 
-    # Row encoding
-    pe[:, :, 0:d_model_quarter:2] = torch.sin(pos_row * div_term_row).unsqueeze(1)
-    pe[:, :, 1:d_model_quarter:2] = torch.cos(pos_row * div_term_row).unsqueeze(1)
+    pe[:, :, 0:d_model_quarter:2] = torch.sin(pos_row * div_term * math.pi).unsqueeze(1)
+    pe[:, :, 1:d_model_quarter:2] = torch.cos(pos_row * div_term * math.pi).unsqueeze(1)
+    pe[:, :, d_model_quarter:d_model_half:2] = torch.sin(pos_col * div_term * math.pi).unsqueeze(0)
+    pe[:, :, d_model_quarter+1:d_model_half:2] = torch.cos(pos_col * div_term * math.pi).unsqueeze(0)
 
-    # Col encoding
-    pe[:, :, d_model_quarter:d_model_half:2] = torch.sin(pos_col * div_term_col).unsqueeze(0)
-    pe[:, :, d_model_quarter+1:d_model_half:2] = torch.cos(pos_col * div_term_col).unsqueeze(0)
+    # Normalize to reduce boundary effects
+    pe = F.normalize(pe, dim=-1, p=2)
 
-    return pe.view(-1, d_model)  # (num_patches, d_model)
+    return pe.view(-1, d_model)
 
 class VisionTransformerInput(nn.Module):
     def __init__(self, image_size, patch_size, in_channels, embed_size):
@@ -119,15 +175,92 @@ class VisionTransformerInput(nn.Module):
                               kernel_size=patch_size, stride=patch_size)
         self.n_h = image_size // patch_size
         self.n_w = image_size // patch_size
-        pe = get_2d_sinusoidal_encoding(self.n_h, self.n_w, embed_size)
+        pe: torch.Tensor = get_2d_sinusoidal_encoding(self.n_h, self.n_w, embed_size)
         self.register_buffer("positional_encoding", pe, persistent=False)
 
     @torch.compile
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         x = self.proj(x)                       # (B, embed, n_h, n_w)
         x = x.flatten(2).transpose(1, 2)       # (B, N, embed)
-        x = x + self.positional_encoding.unsqueeze(0)
+        pos_enc = self.positional_encoding.unsqueeze(0)
+        x = x + pos_enc
         return x, (self.n_h, self.n_w)
+
+class MultiScaleDecoder(nn.Module):
+    """Fixed decoder with explicit spatial tracking"""
+
+    def __init__(self, embed_dim=128, out_chans=1):
+        super().__init__()
+        self.coarse_proj = nn.Linear(embed_dim, 8*8*out_chans)
+        self.fine_proj = nn.Linear(embed_dim, 4*4*out_chans)
+
+    def forward(self, tokens, HcWc, HfWf, mask_flat, B):
+        Hc, Wc = HcWc
+        Hf, Wf = HfWf
+        Nc = Hc * Wc
+
+        coarse_tokens, fine_tokens = tokens[:, :Nc], tokens[:, Nc:]
+
+        # === CRITICAL FIX: Explicit spatial reconstruction ===
+
+        # Project to patch features
+        coarse_features = self.coarse_proj(coarse_tokens)  # [B, Nc, 64*out_chans]
+        coarse_patches = coarse_features.view(B, Nc, -1, 8, 8)  # [B, Nc, C, 8, 8]
+
+        # Create output tensor with explicit spatial placement
+        coarse_output = torch.zeros(B, coarse_patches.shape[2], Hc*8, Wc*8,
+                                  device=tokens.device, dtype=tokens.dtype)
+
+        # EXPLICIT spatial placement - no assumptions about token order
+        for patch_idx in range(Nc):
+            # Calculate ACTUAL spatial position of this patch
+            patch_row = patch_idx // Wc
+            patch_col = patch_idx % Wc
+
+            # Place patch at correct spatial location
+            row_start, row_end = patch_row * 8, (patch_row + 1) * 8
+            col_start, col_end = patch_col * 8, (patch_col + 1) * 8
+
+            coarse_output[:, :, row_start:row_end, col_start:col_end] = \
+                coarse_patches[:, patch_idx]
+
+        # Fine tokens with explicit spatial tracking
+        fine_output = torch.zeros_like(coarse_output)
+
+        for b in range(B):
+            if mask_flat[b].sum() > 0:
+                num_fine_tokens = mask_flat[b].sum().item()
+                fine_features = self.fine_proj(fine_tokens[b, :num_fine_tokens])
+                fine_patches = fine_features.view(num_fine_tokens, -1, 4, 4)
+
+                # Get actual spatial coordinates for fine patches
+                fine_positions = mask_flat[b].nonzero(as_tuple=False).squeeze(-1)
+
+                for k, pos in enumerate(fine_positions):
+                    # Convert flat position to 2D coordinates
+                    patch_row = pos // Wf
+                    patch_col = pos % Wf
+
+                    # Map to output coordinates (fine patches are 4x4)
+                    row_start = patch_row * 4
+                    row_end = row_start + 4
+                    col_start = patch_col * 4
+                    col_end = col_start + 4
+
+                    # Ensure we don't go out of bounds
+                    if (row_end <= fine_output.shape[2] and
+                        col_end <= fine_output.shape[3]):
+                        fine_output[b, :, row_start:row_end, col_start:col_end] = \
+                            fine_patches[k]
+
+        # Combine with proper blending
+        combined = coarse_output + fine_output
+
+        # Final upsampling with proper alignment
+        output = F.interpolate(combined, size=(128, 128),
+                             mode='bilinear', align_corners=True)
+
+        return output
 
 class MultiScaleVisionTransformerInput(nn.Module):
     def __init__(self, image_size, in_channels, embed_size, patch_sizes):
@@ -218,10 +351,8 @@ class SelfAttentionEncoderBlock(nn.Module):
 
     @torch.compile
     def forward(self, x, grid_size):
-        # if self.use_checkpoint and self.training:
-        #     x = checkpoint(self._attn_forward(), x, use_reentrant=True)
-        #     x = checkpoint(self._mlp_forward(), x, use_reentrant=True)
-        # else:
+        # x = checkpoint(self._attn_forward(x), use_reentrant=True)
+        # x = checkpoint(self._mlp_forward(x, grid_size), use_reentrant=True)
         x = self._attn_forward(x)
         x = self._mlp_forward(x, grid_size)
         return x
@@ -254,42 +385,53 @@ class FPNHead(nn.Module):
         # return finest (smallest patch) map
         return feats[str(ps[0])]
 
-# Memory-optimized output projection with progressive upsampling
-class OutputProjection(nn.Module):
-    def __init__(self, image_size, patch_size, embed_size, output_dims, output_size, use_progressive_upsampling=False):
+# Fix 3: Improved multiscale decoder with spatial consistency
+class MultiScaleDecoderFixed(nn.Module):
+    def __init__(self, embed_dim=128, out_chans=1):
         super().__init__()
-        self.patch_size = patch_size
-        self.output_dims = output_dims
-        self.output_size = output_size
-        self.use_progressive_upsampling = use_progressive_upsampling
+        self.coarse_proj = nn.Linear(embed_dim, 8*8*out_chans)
+        self.fine_proj = nn.Linear(embed_dim, 4*4*out_chans)
 
+        # Add spatial consistency layers
+        self.consistency_conv = nn.Conv2d(out_chans, out_chans,
+                                        kernel_size=3, padding=1, bias=False)
+        nn.init.eye_(self.consistency_conv.weight.squeeze())  # Identity-like init
 
-        self.fold = nn.Fold(output_size=(image_size, image_size), kernel_size=patch_size, stride=patch_size)
-        self.att_gate = AttentionGate(F_g=output_dims, F_l=settings.in_channels)
+    def forward(self, tokens, HcWc, HfWf, mask_flat, B):
+        Hc, Wc = HcWc
+        Hf, Wf = HfWf
+        Nc = Hc * Wc
 
-        # Option 1: Direct projection (memory intensive)
-        # self.projection = nn.Linear(embed_size, patch_size * patch_size * output_dims)
+        coarse_tokens, fine_tokens = tokens[:, :Nc], tokens[:, Nc:]
 
-        # Option 2: Progressive upsampling (memory efficient)
-        # Use smaller intermediate projection
-        intermediate_dims = min(embed_size // 2, 128)
-        self.projection = nn.Sequential(
-            nn.Linear(embed_size, intermediate_dims),
-            nn.ReLU(inplace=False),
-            nn.Linear(intermediate_dims, patch_size * patch_size * output_dims)
-        )
+        # Coarse decode with explicit spatial ordering
+        coarse = self.coarse_proj(coarse_tokens)
+        coarse = coarse.view(B, Hc, Wc, -1, 8, 8)  # Explicit spatial layout
+        coarse = coarse.permute(0, 3, 1, 4, 2, 5).contiguous()  # (B, C, Hc, 8, Wc, 8)
+        coarse = coarse.view(B, -1, Hc*8, Wc*8)
 
-    def forward(self, x, skip):
-        x = self.projection(x)
-        x = x.permute(0, 2, 1).contiguous()
-        x = self.fold(x)
+        # Apply consistency regularization
+        coarse = self.consistency_conv(coarse)
 
-        skip_gated = self.att_gate(x, skip)
-        x = x * skip_gated
+        # Fine decode (same logic but more careful indexing)
+        fine_map = torch.zeros_like(coarse)
+        for b in range(B):
+            if mask_flat[b].sum() > 0:
+                num_tokens = mask_flat[b].sum().item()
+                cur_tokens = fine_tokens[b, :num_tokens]
+                fine_patches = self.fine_proj(cur_tokens).view(num_tokens, -1, 4, 4)
 
-        x = F.interpolate(x, size=(self.output_size, self.output_size), mode='bilinear', align_corners=False)
+                # More careful spatial placement
+                coords = mask_flat[b].nonzero(as_tuple=False).squeeze(-1)
+                for k, pos in enumerate(coords):
+                    row, col = divmod(pos.item(), Wf)
+                    fine_map[b, :, row*4:(row+1)*4, col*4:(col+1)*4] = fine_patches[k]
 
-        return x
+        # Blend with learned weights instead of simple addition
+        blend_weight = torch.sigmoid(torch.randn_like(coarse) * 0.1)
+        out = coarse * (1 - blend_weight) + fine_map * blend_weight
+
+        return F.interpolate(out, size=(128, 128), mode='bilinear', align_corners=True)
 
 class MultiScaleOutputHead(nn.Module):
     def __init__(self, in_dim, out_channels, output_size, use_att_gate=True, skip_channels=None):
@@ -331,7 +473,7 @@ class AttentionGate(nn.Module):
             nn.Conv2d(F_int, 1, kernel_size=1, bias=True),
             nn.Sigmoid()
         )
-        self.relu = nn.ReLU(inplace=False)
+        self.relu = nn.ReLU(inplace=True)
 
     def forward(self, g, x):
         # g: decoder feature (from projection path)
@@ -355,16 +497,67 @@ class InputNormalization(nn.Module):
             return x / 255.0
         return x
 
+class SimpleAttention(nn.Module):
+    """Simple attention without positional bias for irregular token sequences"""
+    def __init__(self, dim, num_heads: int=1, qkv_bias: bool=False, qk_scale=None):
+        super().__init__()
+        self.num_heads = num_heads
+        self.head_dim = dim[0] // num_heads
+        self.scale = qk_scale or self.head_dim ** -0.5
+        self.qkv = nn.Linear(dim[0], dim[0] * 3, bias=qkv_bias)
+        self.proj = nn.Linear(dim[0], dim[0])
+
+    def forward(self, x):
+        B, N, C = x.shape
+        qkv = (
+            self.qkv(x)
+            .reshape(B, N, 3, self.num_heads, self.head_dim)
+            .permute(2, 0, 3, 1, 4)
+        )
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        attn_scores = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn_scores.softmax(dim=-1)
+        out = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        out = self.proj(out)
+        return out
+
+class SimpleMLP(nn.Module):
+    """Simple MLP for irregular token sequences"""
+    def __init__(self, embed_size, dropout=0.0, hidden_ratio=2):
+        super().__init__()
+        hidden = embed_size * hidden_ratio
+        self.layers = nn.Sequential(
+            nn.Linear(embed_size, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, embed_size),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x):
+        return self.layers(x)
+
+class SimpleEncoderBlock(nn.Module):
+    """Simple encoder block for irregular token sequences"""
+    def __init__(self, embed_size, num_heads, dropout):
+        super().__init__()
+        self.ln1 = nn.LayerNorm(embed_size)
+        self.attn = SimpleAttention(dim=(embed_size, embed_size), num_heads=num_heads)
+        self.ln2 = nn.LayerNorm(embed_size)
+        self.mlp = SimpleMLP(embed_size, dropout=dropout)
+
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
+        return x
+
 class VisionTransformerForSegmentationMultiScale(nn.Module):
     """
-    - Parallel streams for multiple patch sizes
-    - Encoder blocks with Attention + ConvDilatedMLP
-    - FPN to fuse per-scale features
+    Improved multiscale vision transformer with separate handling for regular and irregular tokens
     """
-    def __init__(self, use_gradient_checkpointing=False):
+    def __init__(self, use_gradient_checkpointing=settings.use_gradient):
         super().__init__()
         # read settings with sensible fallbacks
-        self.output_size = getattr(settings, "output_size", settings.image_size)
+        self.output_size = settings.output_size
         self.in_channels = settings.in_channels
         self.out_channels = settings.out_channels
         self.image_size = settings.image_size
@@ -372,82 +565,76 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
         self.num_blocks = settings.num_blocks
         self.num_heads = settings.num_heads
         self.dropout = settings.dropout
-        self.patch_sizes = getattr(settings, "patch_sizes", [settings.patch_size])  # e.g., [8,16,32]
+        self.patch_sizes = settings.patch_sizes
         self.use_gradient_checkpointing = use_gradient_checkpointing
 
-        # inputs
-        self.vit_inputs = MultiScaleVisionTransformerInput(
-            self.image_size, self.in_channels, self.embed_size, self.patch_sizes
-        )
+        # Multiscale patch embedding
+        self.encoder = MultiScalePatchEmbed(embed_dim=self.embed_size, in_chans=self.in_channels)
 
-        # per-scale encoder stacks
-        self.encoders = nn.ModuleDict()
-        for p in self.patch_sizes:
-            n_h = self.image_size // p
-            n_w = self.image_size // p
-            window_size = (n_h, n_w)  # full window RPB per scale
-            blocks = nn.ModuleList([
-                SelfAttentionEncoderBlock(self.embed_size, self.num_heads, self.dropout,
-                                          window_size=window_size,
-                                          use_checkpoint=use_gradient_checkpointing,
-                                          mlp_dilation=2 if i % 2 == 0 else 3)  # mix dilations
-                for i in range(self.num_blocks)
-            ])
-            self.encoders[str(p)] = blocks
+        # Coarse transformer with positional bias (for regular grid)
+        coarse_patch_size = self.patch_sizes[0]
+        n_h = self.image_size // coarse_patch_size
+        n_w = self.image_size // coarse_patch_size
+        window_size = (n_h, n_w)
 
-        # folding tokens back to maps per scale
-        self.fold_layers = nn.ModuleDict({
-            str(p): nn.Fold(output_size=(self.image_size // p, self.image_size // p),
-                            kernel_size=1, stride=1)  # simple identity fold via (1x1) patches
-            for p in self.patch_sizes
-        })
+        self.coarse_transformer = nn.ModuleList([
+            SelfAttentionEncoderBlock(self.embed_size, self.num_heads, self.dropout,
+                                      window_size=window_size,
+                                      use_checkpoint=settings.use_gradient,
+                                      mlp_dilation=2 if i % 2 == 0 else 3)
+            for i in range(self.num_blocks)
+        ])
 
-        # FPN fusion
-        self.fpn = FPNHead(embed_size=self.embed_size, fpn_dim=128, scales=self.patch_sizes)
+        # Fine transformer without positional bias (for irregular tokens)
+        self.fine_transformer = nn.ModuleList([
+            SimpleEncoderBlock(self.embed_size, self.num_heads, self.dropout)
+            for i in range(self.num_blocks)
+        ])
 
-        # output head
-        self.head = MultiScaleOutputHead(
-            in_dim=128,
-            out_channels=self.out_channels,
-            output_size=self.output_size,
-            use_att_gate=True,
-            skip_channels=self.in_channels
-        )
+        # Multiscale decoder
+        self.decoder = MultiScaleDecoder(embed_dim=self.embed_size, out_chans=self.out_channels)
 
     def forward(self, x):
-        B, _, H, W = x.shape
-        assert H == self.image_size and W == self.image_size, "resize inputs to image_size"
+        B = x.size(0)
+        tokens, HcWc, HfWf, mask_flat = self.encoder(x)
 
-        # keep original for skip
-        skip = x.clone()
+        # Get dimensions
+        Hc, Wc = HcWc
+        Hf, Wf = HfWf
+        Nc = Hc * Wc
 
-        # 1) tokens at each scale
-        per_scale = self.vit_inputs(x)  # {p: (tokens, (n_h, n_w))}
-        maps = {}
+        # Split tokens back to coarse and fine
+        coarse_tokens = tokens[:, :Nc]
+        fine_tokens = tokens[:, Nc:]
 
-        # 2) encoder per scale
-        for p in self.patch_sizes:
-            tokens, (n_h, n_w) = per_scale[p]
-            for blk in self.encoders[str(p)]:
-                tokens = blk(tokens, (n_h, n_w))
-            # to map: (B,N,C)->(B,C,Hs,Ws)
-            fmap = tokens_to_map(tokens, n_h, n_w)
-            maps[p] = fmap  # (B, C, Hs, Ws)
+        # Process coarse tokens (regular grid)
+        for blk in self.coarse_transformer:
+            coarse_tokens = blk(coarse_tokens, (Hc, Wc))
 
-        # 3) fuse with FPN (returns finest resolution map in 128 channels)
-        fused = self.fpn(maps)  # (B, 128, H_min, W_min) where H_min=img/patch_min
+        # Process fine tokens (irregular sequence)
+        if fine_tokens.size(1) > 0:
+            for blk in self.fine_transformer:
+                fine_tokens = blk(fine_tokens)
 
-        # 4) upsample to image size + gated skip + final logits
-        # bring fused to full image size before head (head also upsamples to output_size)
-        fused_up = F.interpolate(fused, size=(self.image_size, self.image_size), mode='bilinear', align_corners=False)
-        out = self.head(fused_up, skip)
+        # Recombine the processed tokens
+        processed_tokens = torch.cat([coarse_tokens, fine_tokens], dim=1)
+
+        # Decode
+        out = self.decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
+        out  = F.interpolate(out, size=(32,32), mode="bilinear")
+
         return out
 
-def build_model():
-    model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=True)
-    #model = torch.compile(model, dynamic=True)
+def build_model(compile_model=False, load_from=None, device=settings.device):
+    model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
     if getattr(settings, "load_from", None) is not None:
-        model.load_state_dict(settings.load_from)
+        state_dict = torch.load(settings.load_from)
+        model.load_state_dict(state_dict, strict=False)
+    elif load_from is not None:
+        state_dict = torch.load(load_from)
+        model.load_state_dict(state_dict, strict=False)
+    if compile_model:
+        model = torch.compile(model, dynamic=True)
 
-    return model
+    return model.to(device)

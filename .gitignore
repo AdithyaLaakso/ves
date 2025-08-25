@@ -10,3 +10,5 @@ bruh*
 *logs/*
 *logs_archive
 *.stamp
+*bruh*
+*.out

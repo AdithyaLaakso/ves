@@ -1,5 +1,6 @@
 #!/bin/zsh
 
+sudo nvidia-smi -caa
 # ----------------------------
 # CPU / OpenMP / MKL settings
 # ----------------------------
@@ -35,8 +36,11 @@ rm -f checkpoints/* &> /dev/null || true
 mkdir -p logs_archive/
 mv -f logs/* logs_archive/
 rm *.stamp
-touch $(date +%s).stamp
 
-sudo nvidia-smi -caa
+stamp=$(date +%s)
+file_name=$stamp".stamp"
+touch $file_name
+nohup tensorboard --logdir ./logs/$stamp &
+
 
 python3 train_reconstruction.py && python3 visualize_model.py
