@@ -1,0 +1,70 @@
+op0: SchedulerNode(ComputedBuffer)
+op0.writes = [MemoryDep('buf0', c0, {c0: 9216})]
+op0.unmet_dependencies = []
+op0.met_dependencies = 
+    [   MemoryDep('add_2', c0, {c0: 9}),
+        MemoryDep('div_3', c0, {c0: 9}),
+        MemoryDep('primals_1', c0, {c0: 9216}),
+        MemoryDep('sigmoid', c0, {c0: 9216}),
+        MemoryDep('tangents_1', c0, {c0: 9216}),
+        MemoryDep('tangents_2', 0, {})]
+op0.outputs = [
+    buf0: ComputedBuffer
+    buf0.layout = FixedLayout('cuda:0', torch.float32, size=[9, 1, 32, 32], stride=[1024, 1024, 32, 1])
+    buf0.users = [NodeUser(node=OUTPUT, can_inplace=False, is_weak=False)]
+]
+op0.group.device = cuda:0
+op0.group.iteration = (9216, 1)
+op0.sizes = ([9, 1024], [])
+tangents_1_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1, 32, 32], stride=[1024, 1024, 32, 1])
+tangents_2_layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+div_3_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1], stride=[1, 1])
+add_2_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1], stride=[1, 1])
+primals_1_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1, 32, 32], stride=[1024, 1024, 32, 1])
+sigmoid_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1, 32, 32], stride=[1024, 1024, 32, 1])
+buf0_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1, 32, 32], stride=[1024, 1024, 32, 1])
+class op0_loop_body:
+    var_ranges = {p0: 9, p1: 1024}
+    index0 = 1024*p0 + p1
+    index1 = 0
+    index2 = p0
+    def body(self, ops):
+        get_index = self.get_index('index0')
+        load = ops.load('tangents_1', get_index)
+        get_index_1 = self.get_index('index1')
+        load_1 = ops.load('tangents_2', get_index_1)
+        neg = ops.neg(load_1)
+        constant = ops.constant(0.1111111111111111, torch.float32)
+        mul = ops.mul(neg, constant)
+        neg_1 = ops.neg(mul)
+        get_index_2 = self.get_index('index2')
+        load_2 = ops.load('div_3', get_index_2)
+        mul_1 = ops.mul(neg_1, load_2)
+        add = ops.add(load, mul_1)
+        get_index_3 = self.get_index('index1')
+        load_3 = ops.load('tangents_2', get_index_3)
+        neg_2 = ops.neg(load_3)
+        constant_1 = ops.constant(0.1111111111111111, torch.float32)
+        mul_2 = ops.mul(neg_2, constant_1)
+        get_index_4 = self.get_index('index2')
+        load_4 = ops.load('add_2', get_index_4)
+        truediv = ops.truediv(mul_2, load_4)
+        constant_2 = ops.constant(2.0, torch.float32)
+        mul_3 = ops.mul(truediv, constant_2)
+        get_index_5 = self.get_index('index0')
+        load_5 = ops.load('primals_1', get_index_5)
+        mul_4 = ops.mul(mul_3, load_5)
+        add_1 = ops.add(add, mul_4)
+        get_index_6 = self.get_index('index0')
+        load_6 = ops.load('sigmoid', get_index_6)
+        get_index_7 = self.get_index('index0')
+        load_7 = ops.load('sigmoid', get_index_7)
+        constant_3 = ops.constant(1.0, torch.float32)
+        sub = ops.sub(constant_3, load_7)
+        mul_5 = ops.mul(load_6, sub)
+        mul_6 = ops.mul(add_1, mul_5)
+        get_index_8 = self.get_index('index0')
+        store = ops.store('buf0', get_index_8, mul_6, None)
+        return store
+
+
