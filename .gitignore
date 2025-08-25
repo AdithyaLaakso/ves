@@ -5,3 +5,8 @@ hand_writing_dataset/
 *.json
 *.pth
 *.png
+bruh*
+*.vim
+*logs/*
+*logs_archive
+*.stamp

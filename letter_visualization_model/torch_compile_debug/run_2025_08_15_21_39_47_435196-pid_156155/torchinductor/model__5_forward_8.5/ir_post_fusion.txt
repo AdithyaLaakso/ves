@@ -1,0 +1,97 @@
+op1: SchedulerNode(ComputedBuffer)
+op1.writes = [MemoryDep('buf1', c0, {c0: 2})]
+op1.unmet_dependencies = []
+op1.met_dependencies = [MemoryDep('primals_1', c0, {c0: 9216}), MemoryDep('primals_2', c0, {c0: 9216})]
+op1.outputs = [
+    buf1: ComputedBuffer
+    buf1.layout = FixedLayout('cuda:0', torch.float32, size=[2], stride=[1])
+    buf1.users = [NodeUser(node=SchedulerNode(name='op2'), can_inplace=False, is_weak=False)]
+]
+op1.group.device = cuda:0
+op1.group.iteration = (2, 4608)
+op1.sizes = ([2], [4608])
+primals_1_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1, 32, 32], stride=[1024, 1024, 32, 1])
+primals_2_layout = FixedLayout('cuda:0', torch.float32, size=[9, 1, 32, 32], stride=[1024, 1024, 32, 1])
+buf1_layout = FixedLayout('cuda:0', torch.float32, size=[2], stride=[1])
+class op1_loop_body:
+    var_ranges = {p0: 2, p1: 4608}
+    index0 = 4608*p0 + p1
+    index1 = p0
+    def body(self, ops):
+        get_index = self.get_index('index0')
+        load = ops.load('primals_1', get_index)
+        get_index_1 = self.get_index('index0')
+        load_1 = ops.load('primals_2', get_index_1)
+        mul = ops.mul(load, load_1)
+        reduction = ops.reduction(torch.float32, torch.float32, 'sum', mul)
+        get_index_2 = self.get_index('index1')
+        store_reduction = ops.store_reduction('buf1', get_index_2, reduction)
+        return None
+
+
+op2_op3: FusedSchedulerNode(SchedulerNode,SchedulerNode)
+op2_op3.writes = [MemoryDep('buf2', 0, {}), MemoryDep('buf3', 0, {})]
+op2_op3.unmet_dependencies = [MemoryDep('buf1', c0, {c0: 2})]
+op2_op3.met_dependencies = []
+op2_op3.outputs = [
+    buf2: ComputedBuffer
+    buf2.layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+    buf2.users = [NodeUser(node=SchedulerNode(name='op3'), can_inplace=True, is_weak=False)]
+    buf3: ComputedBuffer
+    buf3.layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+    buf3.users = [NodeUser(node=OUTPUT, can_inplace=False, is_weak=False)]
+]
+op2_op3.snodes[0] =
+op2: SchedulerNode(ComputedBuffer)
+op2.writes = [MemoryDep('buf2', 0, {})]
+op2.unmet_dependencies = [MemoryDep('buf1', c0, {c0: 2})]
+op2.met_dependencies = []
+op2.outputs = [
+    buf2: ComputedBuffer
+    buf2.layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+    buf2.users = [NodeUser(node=SchedulerNode(name='op3'), can_inplace=True, is_weak=False)]
+]
+op2.group.device = cuda:0
+op2.group.iteration = (1, 2)
+op2.sizes = ([], [2])
+buf1_layout = FixedLayout('cuda:0', torch.float32, size=[2], stride=[1])
+buf2_layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+class op2_loop_body:
+    var_ranges = {p0: 2}
+    index0 = p0
+    index1 = 0
+    def body(self, ops):
+        get_index = self.get_index('index0')
+        load = ops.load('buf1', get_index)
+        reduction = ops.reduction(torch.float32, torch.float32, 'sum', load)
+        get_index_1 = self.get_index('index1')
+        store_reduction = ops.store_reduction('buf2', get_index_1, reduction)
+        return None
+op2_op3.snodes[1] =
+op3: SchedulerNode(ComputedBuffer)
+op3.writes = [MemoryDep('buf3', 0, {})]
+op3.unmet_dependencies = [MemoryDep('buf2', 0, {})]
+op3.met_dependencies = []
+op3.outputs = [
+    buf3: ComputedBuffer
+    buf3.layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+    buf3.users = [NodeUser(node=OUTPUT, can_inplace=False, is_weak=False)]
+]
+op3.group.device = cuda:0
+op3.group.iteration = (1, 1)
+op3.sizes = ([], [])
+buf2_layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+buf3_layout = FixedLayout('cuda:0', torch.float32, size=[], stride=[])
+class op3_loop_body:
+    var_ranges = {}
+    index0 = 0
+    def body(self, ops):
+        get_index = self.get_index('index0')
+        load = ops.load('buf2', get_index)
+        constant = ops.constant(9216.0, torch.float32)
+        truediv = ops.truediv(load, constant)
+        get_index_1 = self.get_index('index0')
+        store = ops.store('buf3', get_index_1, truediv, None)
+        return store
+
+

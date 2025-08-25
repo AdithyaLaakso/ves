@@ -1,293 +1,158 @@
 import os
+import signal
+import sys
+
 import torch
-from constants import hyperparams_list
-from model import VisionTransformerForSegmentation
-import classif
-from dataset import SingleLetterSegmentationDataLoader, SingleLetterSegmentationDataset  # Updated imports
-from loss import BinarySegmentationLoss
-from IQA_pytorch import SSIM, GMSD, LPIPSvgg, DISTS
-import torch.nn.functional as F
+from torch.utils.data import Subset
+
 import settings
+import dataset
+#from model import create_enhanced_memory_efficient_vit as create_memory_efficient_vit
+from model import build_model
+from loss import MetaLoss
+from torch.amp.grad_scaler import GradScaler
 
-PRETRAIN_PROTECTOR = 10  # Factor to protect pretrained layers from learning rate decay
+#don't cook my vram and require a reboot if I SIGINT
 
-# select device
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print(f"training on {device}")
+def signal_handler(sig, frame):
+    print('Cleaning up...')
+    torch.cuda.empty_cache()
+    sys.exit(0)
 
-# Diable anaomly detection
-torch.autograd.set_detect_anomaly(False)
+signal.signal(signal.SIGINT, signal_handler)
 
-# Turn on the cuda auto timer
-torch.backends.cudnn.benchmark = False
+def train_epoch(model, loader, optimizer, criterion, scaler):
+    total_loss = torch.zeros(1, device=device)
+    n_batches = 0
 
-@torch.compile
-def train_model(batch_size, learning_rate, num_epochs, train_percent, optimizer_class, bias_factor=3.0, pretrained_model=None):
-    """
-    Train the segmentation model with the fixed data pipeline.
-    """
+    model.train()
 
-    # Initialize model for segmentation: 1 channel in, 1 channel out, 32x32 output
-    model = VisionTransformerForSegmentation()
+    for inputs, targets in loader:
+        torch.cuda.empty_cache()
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(inputs, outputs, targets)
+
+        # print(loss)
+        scaler.scale(loss).backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        scaler.step(optimizer)
+        scaler.update()
+
+        total_loss += loss
+        n_batches += 1
+        # if step % settings.print_every_batches == 0:
+        #     path = f"{settings.save_to_dir}/{step // settings.print_every_batches}.pth"
+        #     torch.save(model.state_dict(), path)
+
+    return total_loss / max(n_batches, 1)
+
+def evaluate_epoch(model, loader, criterion):
+    total_loss = torch.zeros(1, device=device)
+    n_batches = 0
+
+    model.eval()
+    with torch.no_grad():
+        for inputs, targets in loader:
+            torch.cuda.empty_cache()
+            inputs = inputs.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+
+            outputs = model(inputs)
+            loss = criterion(inputs, outputs, targets)
+
+            total_loss += loss
+            n_batches += 1
+
+    return total_loss / max(n_batches, 1)
+
+
+def train_model():
+    model = build_model()
+
     model.to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = settings.segmentation_hyperparams.optimizer_class(model.parameters())
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=settings.learning_rate_gamma)
 
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+    scaler = GradScaler(device)
 
-    # Use segmentation-specific loss
-    criterion = BinarySegmentationLoss()
+    compiled_train_epoch = torch.compile(train_epoch)
+    compiled_evaluate_epoch = torch.compile(evaluate_epoch)
 
-    # levels = [1]
-    # levels = [30, 100]
-    levels = [i for i in range(1, 31)]
-    # for i in range(0, 2):
-    #     levels.append(100)
+    # compiled_train_epoch = train_epoch
+    # compiled_evaluate_epoch = evaluate_epoch
 
-    for level in levels:
+    criterion = MetaLoss()
+
+    print(f"training levels: {settings.levels}")
+    for level in settings.levels:
+        if level is None:
+            continue
+
         print(f"Training level: {level}")
 
-        # Load dataset for this level using the new segmentation dataset
-        train_test_data = SingleLetterSegmentationDataset(level=level)
-        dataset = train_test_data.dataset
+        data = dataset.SegData(level=level)
 
-        # Split dataset into train and test sets
-        train_size = int(train_percent * len(dataset))
-        indices = torch.randperm(len(dataset))
-        train_indices = indices[:train_size]
-        test_indices = indices[train_size:]
+        n_total = len(data)
+        print(f"training with {n_total} items")
 
-        # Create train and test datasets
-        train_dataset = SingleLetterSegmentationDataset(level=level)
-        train_dataset.dataset = [dataset[i] for i in train_indices]
+        if n_total == 0:
+            raise ValueError("Dataset is empty!")
 
-        test_dataset = SingleLetterSegmentationDataset(level=level)
-        test_dataset.dataset = [dataset[i] for i in test_indices]
+        n_train = int(settings.segmentation_hyperparams.train_percent * n_total)
 
-        # Create data loaders WITHOUT synthetic channels - use single channel
-        train_loader = SingleLetterSegmentationDataLoader(
-            train_dataset,
+        shuffled = torch.randperm(n_total)
+        train_idx = shuffled[:n_train].tolist()
+        test_idx = shuffled[n_train:].tolist()
+
+        train_loader = dataset.create_loader(
+            Subset(data, train_idx),
+            batch_size=settings.segmentation_hyperparams.batch_size,
             shuffle=True,
-            device=device,
-            create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
         )
 
-        test_loader = SingleLetterSegmentationDataLoader(
-            test_dataset,
+        test_loader = dataset.create_loader(
+            Subset(data, test_idx),
+            batch_size=settings.segmentation_hyperparams.batch_size,
             shuffle=False,
-            device=device,
-            create_synthetic_channels=False  # CHANGED: Disable 8-channel creation
         )
 
-        for epoch in range(num_epochs):
-            print(f"Epoch {epoch+1}/{num_epochs}")
-            model.train()
-            running_loss = 0.0
-            running_components = {
-                'dice_loss': 0.0,
-                'ssim_loss': 0.0,
-                'accuracy_loss': 0.0,
-                'total_loss': 0.0
-            }
-            batch_count = 0
+        for epoch in range(settings.segmentation_hyperparams.num_epochs):
+            train_loss = compiled_train_epoch(
+                model,
+                train_loader,
+                optimizer,
+                criterion,
+                scaler
+            )
 
-            for inputs, targets, labels in train_loader:
-                try:
-                    optimizer.zero_grad()
+            test_loss = compiled_evaluate_epoch(model, test_loader, criterion)
 
-                    # CHANGED: Ensure inputs are single channel 128x128
-                    # Convert RGB to grayscale if needed
-                    if inputs.shape[1] == 3:  # RGB input
-                        inputs = torch.mean(inputs, dim=1, keepdim=True)  # Convert to grayscale
-
-                    # Ensure correct input format: [batch, 1, 128, 128]
-                    if inputs.shape[1] != 1:
-                        raise ValueError(f"Expected single channel input, got {inputs.shape[1]} channels")
-
-                    # Forward pass - inputs are now 1-channel 128x128
-                    # targets are 1-channel 32x32 binary masks
-                    outputs = model(inputs)
-
-                    # Compute loss
-                    loss = criterion.forward(outputs, targets)
-
-                    # Backward pass
-                    loss.backward()
-                    optimizer.step()
-
-                    # Track losses
-                    running_loss += loss.item()
-                    batch_count += 1
-
-                    # Track loss components if available
-                    if hasattr(criterion, 'last_loss_components'):
-                        components = criterion.last_loss_components
-                        for key in running_components:
-                            if key in components:
-                                running_components[key] += components[key]
-
-                    # Print progress every 50 batches
-                    if batch_count % 50 == 0:
-                        avg_loss = running_loss / batch_count
-                        print(f"  Batch {batch_count}, Avg Loss: {avg_loss:.4f}")
-
-                except Exception as e:
-                    print(f"Error in training batch: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
-
-            # Calculate epoch averages
-            if batch_count > 0:
-                epoch_loss = running_loss / batch_count
-                for key in running_components:
-                    running_components[key] /= batch_count
-
-                print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}")
-                print(f"  Loss Components: {running_components}")
-            else:
-                print(f"No valid batches in epoch {epoch+1}")
-                continue
-
-            # Evaluation on test set
-            model.eval()
-            test_loss = 0.0
-            test_batch_count = 0
-            test_components = {
-                'dice_loss': 0.0,
-                'ssim_loss': 0.0,
-                'accuracy_loss': 0.0,
-                'total_loss': 0.0
-            }
-
-            with torch.no_grad():
-                for inputs, targets, labels in test_loader:
-                    try:
-                        # CHANGED: Apply same input processing for test data
-                        if inputs.shape[1] == 3:  # RGB input
-                            inputs = torch.mean(inputs, dim=1, keepdim=True)  # Convert to grayscale
-
-                        if inputs.shape[1] != 1:
-                            raise ValueError(f"Expected single channel input, got {inputs.shape[1]} channels")
-
-                        outputs = model(inputs)
-                        loss = criterion.forward(outputs, targets)
-                        test_loss += loss.item()
-                        test_batch_count += 1
-
-                        # Track test loss components
-                        if hasattr(criterion, 'last_loss_components'):
-                            components = criterion.last_loss_components
-                            for key in test_components:
-                                if key in components:
-                                    test_components[key] += components[key]
-
-                    except Exception as e:
-                        print(f"Error in test batch: {e}")
-                        continue
-
-            if test_batch_count > 0:
-                avg_test_loss = test_loss / test_batch_count
-                for key in test_components:
-                    test_components[key] /= test_batch_count
-
-                print(f"Test Loss: {avg_test_loss:.4f}")
-                print(f"  Test Components: {test_components}")
-            else:
-                print("No valid test batches")
-                avg_test_loss = float('inf')
+            print(f"Epoch {epoch+1}/{settings.segmentation_hyperparams.num_epochs} | "
+                  f"Train Loss: {train_loss/len(train_loader)} | "
+                  f"Test Loss: {test_loss/len(test_loader)}")
 
             scheduler.step()
 
-    # Save the trained model
-    optimizer_name = optimizer_class.__name__ if hasattr(optimizer_class, "__name__") else str(optimizer_class).split(".")[-1].split("'")[0]
-    os.makedirs("trained_segmentation_models", exist_ok=True)
-    model_path = f"trained_segmentation_models/trained_segmentation_model_{optimizer_name}.pth"
-    torch.save(model.state_dict(), model_path)
-    print(f"Model saved to: {model_path}")
+            # Save per-level model
+            if settings.save_every_epoch:
+                os.makedirs(settings.save_to_dir, exist_ok=True)
+                if isinstance(level, list):
+                    path = f"{settings.save_to_dir}/{level[0]}-{level[-1]}-{epoch+1}.pth"
+                else:
+                    path = f"{settings.save_to_dir}/{level}-{epoch+1}.pth"
 
-    return epoch_loss if 'epoch_loss' in locals() else 0.0, avg_test_loss if 'avg_test_loss' in locals() else 0.0
+                torch.save(model.state_dict(), path)
+                print(f"Saved model for level {level} -> {path}")
 
-@torch.compile
-def test_data_pipeline():
-    """Test the data pipeline before training."""
-    print("Testing data pipeline...")
-
-    try:
-        # Test dataset creation
-        dataset = SingleLetterSegmentationDataset(level=0)
-        print(f"✓ Dataset loaded: {len(dataset.dataset)} items")
-
-        # Test dataloader - CHANGED: No synthetic channels
-        dataloader = SingleLetterSegmentationDataLoader(
-            dataset,
-            device=device,
-            create_synthetic_channels=False  # CHANGED: Disable synthetic channels
-        )
-
-        # Test one batch
-        for inputs, targets, labels in dataloader:
-            print(f"✓ Raw input shape: {inputs.shape}")
-            print(f"✓ Target shape: {targets.shape} (expected: [batch_size, 1, 32, 32])")
-            print(f"✓ Labels count: {len(labels)}")
-            print(f"✓ Input range: [{inputs.min():.3f}, {inputs.max():.3f}]")
-            print(f"✓ Target range: [{targets.min():.3f}, {targets.max():.3f}]")
-
-            # CHANGED: Convert to single channel if needed
-            if inputs.shape[1] == 3:  # RGB input
-                inputs = torch.mean(inputs, dim=1, keepdim=True)  # Convert to grayscale
-                print(f"✓ Converted to grayscale: {inputs.shape} (expected: [batch_size, 1, 128, 128])")
-
-            # Verify single channel
-            if inputs.shape[1] != 1:
-                raise ValueError(f"Expected single channel input after conversion, got {inputs.shape[1]} channels")
-
-            # Test model forward pass - CHANGED: Use correct parameters
-            model = VisionTransformerForSegmentation()
-            model.to(device)
-
-            with torch.no_grad():
-                outputs = model(inputs)
-                print(f"✓ Model output shape: {outputs.shape} (expected: [batch_size, 1, 32, 32])")
-                print(f"✓ Model output range: [{outputs.min():.3f}, {outputs.max():.3f}]")
-
-            break
-
-        print("✓ Data pipeline test passed!")
-        return True
-
-    except Exception as e:
-        print(f"✗ Data pipeline test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-params = settings.segmentation_hyperparams._asdict()  # Convert to dict first
-train_loss, test_loss = train_model(**params)
+    return model
 
 if __name__ == "__main__":
-    print("Starting segmentation training...")
+    device = settings.device
+    print(f"training on {device}")
 
-    # Test data pipeline first
-    if not test_data_pipeline():
-        print("Data pipeline test failed. Please fix the issues before training.")
-        exit(1)
-
-    # Train with segmentation-specific hyperparameters
-    for params in segmentation_hyperparams:
-        print(f"\nTraining with hyperparameters: {params}")
-        try:
-            train_loss, test_loss = train_model(**params)
-            print(f"Final Train Loss: {train_loss:.4f}, Final Test Loss: {test_loss:.4f}")
-        except Exception as e:
-            print(f"Training failed: {e}")
-            import traceback
-            traceback.print_exc()
-
-    print("\nTraining completed!")
-    print("\nKey changes made:")
-    print("1. ✓ Fixed input: 8-channel synthetic → 1-channel grayscale")
-    print("2. ✓ Fixed input size: Variable → 128×128")
-    print("3. ✓ Fixed output: RGB reconstruction → Binary segmentation (32×32)")
-    print("4. ✓ Fixed loss: MSE → Binary segmentation loss")
-    print("5. ✓ Added comprehensive error handling and progress tracking")
+    model = train_model()
+    path = settings.save_to
+    torch.save(model.state_dict(), path)
+    print(f"Saved model to {path}")
