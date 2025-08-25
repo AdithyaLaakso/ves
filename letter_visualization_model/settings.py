@@ -39,7 +39,7 @@ torch.cuda.empty_cache()
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_size = None
 
-track_levels = False
+track_levels = True
 
 LossSettings = namedtuple('LossSettings', [
     'dice_weight', 'mse_weight', 'boundary_weight',
@@ -52,9 +52,9 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=10,
-    batch_size=6,
-    learning_rate=5e-4,
+    num_epochs=5,
+    batch_size=8,
+    learning_rate=1e-3,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
@@ -65,6 +65,7 @@ learning_rate_gamma=0.9
 
 num_workers=1
 
+<<<<<<< HEAD
 # data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 add_to_path = "/home/Adithya/Documents/"
@@ -79,9 +80,15 @@ add_to_path = ""
 =======
 # add_to_path = ""
 >>>>>>> d755dd89b (cleanup)
+=======
+data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
+# data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
+# add_to_path = "/home/Adithya/Documents/"
+add_to_path = ""
+>>>>>>> 2b175369d (commit before merge)
 
-# levels = [i for i in range(0, 14)]
-levels = [0]
+levels = [i for i in range(0, 25)]
+# levels = [0]
 
 display_levels = levels
 
@@ -101,10 +108,10 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
-display_from = save_to
-# display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/0-1.pth"
-
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/0-6.pth"
 load_from = None
+
+display_from = save_to
 
 save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
 
@@ -132,9 +139,9 @@ meta_s = 1.0
 
 loss_settings = LossSettings(
     dice_weight=5.0,
-    mse_weight=1.0,
-    boundary_weight=1.25,
-    focal_weight=0.75,
+    mse_weight=5.0,
+    boundary_weight=1.0,
+    focal_weight=20.0,
     focal_alpha=0.2,
     focal_gamma=2.0
 )

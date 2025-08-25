@@ -264,16 +264,23 @@ class SelfAttentionEncoderBlock(nn.Module):
         x = self._mlp_forward(x, grid_size)
         return x
 
-class MultiScaleDecoderFixed(nn.Module):
+class MultiScaleDecoder(nn.Module):
     def __init__(self, embed_dim=32, out_chans=1):
         super().__init__()
-        self.coarse_proj = nn.Linear(embed_dim, 8*8*out_chans)
-        self.fine_proj = nn.Linear(embed_dim, 4*4*out_chans)
+        self.out_chans = out_chans
 
-        # Add spatial consistency layers
-        self.consistency_conv = nn.Conv2d(out_chans, out_chans,
-                                        kernel_size=3, padding=1, bias=False)
-        nn.init.eye_(self.consistency_conv.weight.squeeze())  # Identity-like init
+        # Project coarse tokens -> coarse feature map
+        self.coarse_proj = nn.Linear(embed_dim, out_chans)
+
+        # Project fine tokens -> fine feature map
+        self.fine_proj = nn.Linear(embed_dim, out_chans)
+
+        # Convolutional fusion
+        self.fuse_conv = nn.Sequential(
+            nn.Conv2d(out_chans * 2, out_chans * 2, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_chans * 2, out_chans, 3, padding=1)
+        )
 
     def forward(self, tokens, HcWc, HfWf, mask_flat, B):
         Hc, Wc = HcWc
@@ -282,34 +289,32 @@ class MultiScaleDecoderFixed(nn.Module):
 
         coarse_tokens, fine_tokens = tokens[:, :Nc], tokens[:, Nc:]
 
-        # Coarse decode with explicit spatial ordering
-        coarse = self.coarse_proj(coarse_tokens)
-        coarse = coarse.view(B, Hc, Wc, -1, 8, 8)  # Explicit spatial layout
-        coarse = coarse.permute(0, 3, 1, 4, 2, 5).contiguous()  # (B, C, Hc, 8, Wc, 8)
-        coarse = coarse.view(B, -1, Hc*8, Wc*8)
+        # --- Coarse branch ---
+        coarse = self.coarse_proj(coarse_tokens)          # (B, Nc, C)
+        coarse = coarse.view(B, Hc, Wc, self.out_chans)  # (B, Hc, Wc, C)
+        coarse = coarse.permute(0, 3, 1, 2)              # (B, C, Hc, Wc)
+        coarse_up = F.interpolate(coarse, size=(32, 32), mode='bilinear', align_corners=True)
 
-        # Apply consistency regularization
-        coarse = self.consistency_conv(coarse)
+        # --- Fine branch ---
+        fine_map = torch.zeros(B, self.out_chans, Hf, Wf, device=tokens.device, dtype=tokens.dtype)
 
-        # Fine decode (same logic but more careful indexing)
-        fine_map = torch.zeros_like(coarse)
         for b in range(B):
-            if mask_flat[b].sum() > 0:
-                num_tokens = mask_flat[b].sum().item()
-                cur_tokens = fine_tokens[b, :num_tokens]
-                fine_patches = self.fine_proj(cur_tokens).view(num_tokens, -1, 4, 4)
+            coords = mask_flat[b].nonzero(as_tuple=False).squeeze(-1)
+            if coords.numel() == 0:
+                continue
+            cur_tokens = fine_tokens[b, :coords.numel()]
+            fine_feats = self.fine_proj(cur_tokens)  # (num_tokens, C)
+            for k, pos in enumerate(coords):
+                row, col = divmod(pos.item(), Wf)
+                fine_map[b, :, row, col] = fine_feats[k]
 
-                # More careful spatial placement
-                coords = mask_flat[b].nonzero(as_tuple=False).squeeze(-1)
-                for k, pos in enumerate(coords):
-                    row, col = divmod(pos.item(), Wf)
-                    fine_map[b, :, row*4:(row+1)*4, col*4:(col+1)*4] = fine_patches[k]
+        fine_up = F.interpolate(fine_map, size=(32, 32), mode='bilinear', align_corners=True)
 
-        # Blend with learned weights instead of simple addition
-        blend_weight = torch.sigmoid(torch.randn_like(coarse) * 0.1)
-        out = coarse * (1 - blend_weight) + fine_map * blend_weight
+        # --- Fuse coarse + fine ---
+        fused = torch.cat([coarse_up, fine_up], dim=1)  # (B, 2C, 32, 32)
+        out = self.fuse_conv(fused)                     # (B, C, 32, 32)
 
-        return F.interpolate(out, size=(32, 32), mode='bilinear', align_corners=True)
+        return out
 
 class MultiScaleOutputHead(nn.Module):
     def __init__(self, in_dim, out_channels, output_size, use_att_gate=True, skip_channels=None):
@@ -446,7 +451,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
             SelfAttentionEncoderBlock(self.embed_size, self.num_heads, self.dropout,
                                       window_size=window_size,
                                       use_checkpoint=settings.use_gradient,
-                                      mlp_dilation=(i+1)//2)
+                                      mlp_dilation=2 if i%2==0 else 3)
             for i in range(self.num_blocks)
         ])
 

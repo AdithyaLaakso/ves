@@ -103,10 +103,10 @@ class BinarySegmentationLoss(nn.Module):
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
         mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
 
-        dice_val = dice_val * dice_val * dice_val
-        boundary_val = boundary_val * boundary_val
-        focal_val = focal_val * focal_val
-        mse_val = mse_val * mse_val
+        dice_val = dice_val * dice_val
+        boundary_val = boundary_val * boundary_val * boundary_val
+        focal_val = focal_val
+        mse_val = mse_val
 
         # Weighted sum
         loss = (

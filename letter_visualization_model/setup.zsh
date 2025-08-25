@@ -40,6 +40,7 @@ rm *.stamp
 stamp=$(date +%s)
 file_name=$stamp".stamp"
 touch $file_name
+killall tensorboard
 nohup tensorboard --logdir ./logs/$stamp &
 
 
