@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torch.utils.tensorboard import SummaryWriter
 
 import settings
@@ -87,7 +88,7 @@ class BinarySegmentationLoss(nn.Module):
         self.mse_weight = settings.loss_settings.mse_weight
         self.focal_alpha = settings.loss_settings.focal_alpha
         self.focal_gamma = settings.loss_settings.focal_gamma
-        self.mse_loss = nn.MSELoss()
+        self.mse_loss = StructuralSimilarityIndexMeasure(data_range=1.0).to(settings.device)
         self.d = nn.BCELoss()
 
 
@@ -102,7 +103,7 @@ class BinarySegmentationLoss(nn.Module):
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
         mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
 
-        dice_val = dice_val * dice_val
+        dice_val = dice_val * dice_val * dice_val
         boundary_val = boundary_val * boundary_val
         focal_val = focal_val * focal_val
         mse_val = mse_val * mse_val

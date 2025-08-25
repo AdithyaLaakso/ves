@@ -39,7 +39,7 @@ torch.cuda.empty_cache()
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_size = None
 
-track_levels = True
+track_levels = False
 
 LossSettings = namedtuple('LossSettings', [
     'dice_weight', 'mse_weight', 'boundary_weight',
@@ -53,20 +53,22 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 
 segmentation_hyperparams = SegmentationHyperparams(
     num_epochs=10,
-    batch_size=4,
-    learning_rate=8e-4,
+    batch_size=6,
+    learning_rate=5e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
 
 # track_levels = True
 
-learning_rate_gamma=1.0
+learning_rate_gamma=0.9
 
 num_workers=1
 
-data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
+# data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
+data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 add_to_path = "/home/Adithya/Documents/"
+<<<<<<< HEAD
 <<<<<<< HEAD
 data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json" #"C:\\Users\\randt\\OneDrive\\Documents\\Vesuvius\\ves\\synthetic_ct_images\\paths.json" 
 =======
@@ -74,18 +76,14 @@ data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json" #"C:\\Users
 >>>>>>> fd80bc7b1 (commiting before adding logs)
 # add_to_path = "/home/Adithya/Documents/"
 add_to_path = ""
+=======
+# add_to_path = ""
+>>>>>>> d755dd89b (cleanup)
 
-# levels = [[1]]
-# levels = [ [arr for arr in range(i,i+5)] for i in range(0, 25) if i%2==0] + [30]
-levels = [21]
-# levels = [[j for j in range(i // 2, i+1)] for i in range (0, 17)]
-# levels = [0]
+# levels = [i for i in range(0, 14)]
+levels = [0]
 
-#display_levels = [1,2,3,4]
-# display_levels = [i for i in range(4,8)]
-# display_levels = [i for i in range (0, 17)]
-display_levels = [20, 21]
-# display_levels = [i for i in range(5, 31)]
+display_levels = levels
 
 image_size=128
 patch_sizes=(4, 8)
@@ -100,14 +98,13 @@ output_size=32
 use_gradient=True
 
 print_every_batches = 1
-save_every_print = True
 
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
-# display_from = save_to
-display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/21-4.pth"
+display_from = save_to
+# display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/0-1.pth"
 
-load_from = save_to
+load_from = None
 
 save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
 
@@ -134,10 +131,10 @@ meta_s = 1.0
 # meta_d_weight /= meta_multiloss_scale
 
 loss_settings = LossSettings(
-    dice_weight=1.0,
+    dice_weight=5.0,
     mse_weight=1.0,
-    boundary_weight=1.0,
-    focal_weight=1.0,
+    boundary_weight=1.25,
+    focal_weight=0.75,
     focal_alpha=0.2,
     focal_gamma=2.0
 )

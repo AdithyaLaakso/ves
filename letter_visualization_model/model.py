@@ -191,70 +191,16 @@ class ConvDecoder(nn.Module):
     def __init__(self, in_chans, out_chans):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(in_chans, 64, 3, padding=1),
+            nn.Conv2d(in_chans, 16, 3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, 3, padding=1),
+            nn.Conv2d(16, 16, 3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(64, out_chans, 3, padding=1)
+            nn.Conv2d(16, out_chans, 3, padding=1)
         )
 
     def forward(self, x):
         return self.net(x)
 
-class MultiScaleDecoder(nn.Module):
-    """Decoder with learned CNN-based reconstruction"""
-    def __init__(self, embed_dim=128, out_chans=1):
-        super().__init__()
-        self.out_chans = out_chans
-
-        # Linear projections from tokens
-        self.coarse_proj = nn.Linear(embed_dim, embed_dim)
-        self.fine_proj = nn.Linear(embed_dim, embed_dim)
-
-        # CNNs for two streams
-        self.coarse_cnn = ConvDecoder(embed_dim, out_chans)
-        self.fine_cnn = ConvDecoder(embed_dim, out_chans)
-
-        # Fusion CNN
-        self.fusion_cnn = ConvDecoder(2*out_chans, out_chans)
-
-    def forward(self, tokens, HcWc, HfWf, mask_flat, B):
-        Hc, Wc = HcWc
-        Hf, Wf = HfWf
-        Nc = Hc * Wc
-
-        coarse_tokens, fine_tokens = tokens[:, :Nc], tokens[:, Nc:]
-
-        # --- Coarse stream ---
-        coarse_features = self.coarse_proj(coarse_tokens)  # [B, Nc, C]
-        coarse_map = coarse_features.view(B, Hc, Wc, -1).permute(0, 3, 1, 2)  # [B, C, Hc, Wc]
-        coarse_map = F.interpolate(coarse_map, scale_factor=8, mode='bilinear', align_corners=True)
-        coarse_out = self.coarse_cnn(coarse_map)  # [B, out_chans, H, W]
-
-        # --- Fine stream ---
-        fine_map = torch.zeros(B, fine_tokens.shape[-1], Hf, Wf,
-                               device=tokens.device, dtype=tokens.dtype)
-
-        for b in range(B):
-            if mask_flat[b].sum() > 0:
-                num_fine = mask_flat[b].sum().item()
-                fine_feats = self.fine_proj(fine_tokens[b, :num_fine])  # [num_fine, C]
-                fine_positions = mask_flat[b].nonzero(as_tuple=False).squeeze(-1)
-
-                for k, pos in enumerate(fine_positions):
-                    r, c = divmod(pos.item(), Wf)
-                    fine_map[b, :, r, c] = fine_feats[k]
-
-        fine_out = self.fine_cnn(fine_map)  # [B, out_chans, Hf, Wf]
-        fine_out = F.interpolate(fine_out, size=coarse_out.shape[-2:], mode='bilinear', align_corners=True)
-
-        # --- Fusion ---
-        fused = torch.cat([coarse_out, fine_out], dim=1)  # [B, 2*out_chans, H, W]
-        output = self.fusion_cnn(fused)
-
-        # Final resize to 128x128
-        output = F.interpolate(output, size=(128, 128), mode='bilinear', align_corners=True)
-        return output
 class MultiScaleVisionTransformerInput(nn.Module):
     def __init__(self, image_size, in_channels, embed_size, patch_sizes):
         super().__init__()
@@ -267,38 +213,6 @@ class MultiScaleVisionTransformerInput(nn.Module):
     def forward(self, x):
         # returns dict: {p: (tokens, (n_h, n_w))}
         return {p: self.scales[str(p)](x) for p in self.patch_sizes}
-
-# Memory-optimized MultiLayerPerceptron with optional gradient checkpointing
-class MultiLayerPerceptron(nn.Module):
-    def __init__(self, embed_size, dropout, use_gelu=True, expansion_factor=4):
-        super().__init__()
-        # Reduced expansion factor from 4x to configurable (default 4, can reduce to 2-3)
-        hidden_size = embed_size * expansion_factor
-
-        # Use GELU instead of Sigmoid for better performance and memory efficiency
-        activation = nn.GELU() if use_gelu else nn.Sigmoid()
-
-        self.spatial_mix = nn.Linear(embed_size, hidden_size)
-        self.layers = nn.Sequential(
-            nn.Linear(embed_size, hidden_size),
-            # nn.Linear(hidden_size, hidden_size),
-            # nn.LayerNorm(hidden_size),
-            activation,
-            nn.Linear(hidden_size, embed_size),
-            # nn.LayerNorm(embed_size),
-            nn.Dropout(p=dropout),
-        )
-
-        self.embed_size = embed_size
-        self.hidden_size = hidden_size
-
-    @torch.compile
-    def forward(self, x):
-        # x_spatial = self.spatial_mix(x)
-        # x_channel = self.layers(x_spatial)
-        # return x + x_channel
-        x_channel = self.layers(x)
-        return x_channel
 
 class ConvDilatedMLP(nn.Module):
     """
@@ -350,37 +264,8 @@ class SelfAttentionEncoderBlock(nn.Module):
         x = self._mlp_forward(x, grid_size)
         return x
 
-class FPNHead(nn.Module):
-    def __init__(self, embed_size, fpn_dim=128, scales=(8,16,32)):
-        super().__init__()
-        # lateral 1x1 on each scale -> fpn_dim
-        self.laterals = nn.ModuleDict({str(p): nn.Conv2d(embed_size, fpn_dim, 1) for p in scales})
-        self.smooth = nn.ModuleDict({str(p): nn.Conv2d(fpn_dim, fpn_dim, 3, padding=1) for p in scales})
-        self.scales = sorted(scales)  # small -> large (e.g., 8 < 16 < 32)
-
-    def forward(self, feature_maps):
-        """
-        feature_maps: dict {p: fmap (B, C, H_p, W_p)} for p in scales
-        Returns top-down fused map at the highest resolution (smallest patch size).
-        """
-        # top-down: start from coarsest
-        ps = self.scales
-        feats = {str(p): self.laterals[str(p)](feature_maps[p]) for p in ps}
-        for i in reversed(range(1, len(ps))):  # from coarse -> fine
-            p_coarse, p_fine = ps[i], ps[i-1]
-            up = F.interpolate(feats[str(p_coarse)], size=feats[str(p_fine)].shape[-2:], mode='nearest')
-            feats[str(p_fine)] = feats[str(p_fine)] + up
-
-        # smooth convs
-        for p in ps:
-            feats[str(p)] = self.smooth[str(p)](feats[str(p)])
-
-        # return finest (smallest patch) map
-        return feats[str(ps[0])]
-
-# Fix 3: Improved multiscale decoder with spatial consistency
 class MultiScaleDecoderFixed(nn.Module):
-    def __init__(self, embed_dim=128, out_chans=1):
+    def __init__(self, embed_dim=32, out_chans=1):
         super().__init__()
         self.coarse_proj = nn.Linear(embed_dim, 8*8*out_chans)
         self.fine_proj = nn.Linear(embed_dim, 4*4*out_chans)
@@ -424,7 +309,7 @@ class MultiScaleDecoderFixed(nn.Module):
         blend_weight = torch.sigmoid(torch.randn_like(coarse) * 0.1)
         out = coarse * (1 - blend_weight) + fine_map * blend_weight
 
-        return F.interpolate(out, size=(128, 128), mode='bilinear', align_corners=True)
+        return F.interpolate(out, size=(32, 32), mode='bilinear', align_corners=True)
 
 class MultiScaleOutputHead(nn.Module):
     def __init__(self, in_dim, out_channels, output_size, use_att_gate=True, skip_channels=None):
@@ -476,19 +361,6 @@ class AttentionGate(nn.Module):
         psi = self.relu(g1 + x1)
         psi = self.psi(psi)
         return x * psi
-
-class InputNormalization(nn.Module):
-    """Normalize input from 0-255 range to 0-1 range"""
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        # Handle both uint8 and float inputs
-        if x.dtype == torch.uint8:
-            return x.float() / 255.0
-        elif x.max() > 1.0:
-            return x / 255.0
-        return x
 
 class SimpleAttention(nn.Module):
     """Simple attention without positional bias for irregular token sequences"""
@@ -574,7 +446,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
             SelfAttentionEncoderBlock(self.embed_size, self.num_heads, self.dropout,
                                       window_size=window_size,
                                       use_checkpoint=settings.use_gradient,
-                                      mlp_dilation=2 if i % 2 == 0 else 3)
+                                      mlp_dilation=(i+1)//2)
             for i in range(self.num_blocks)
         ])
 
@@ -621,7 +493,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
-    if getattr(settings, "load_from", None) is not None:
+    if settings.load_from is not None:
         state_dict = torch.load(settings.load_from)
         model.load_state_dict(state_dict, strict=False)
     elif load_from is not None:
