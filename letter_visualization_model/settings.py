@@ -67,7 +67,7 @@ num_workers=1
 
 # data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 add_to_path = "/home/Adithya/Documents/"
-data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
+data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json" #"C:\\Users\\randt\\OneDrive\\Documents\\Vesuvius\\ves\\synthetic_ct_images\\paths.json" 
 # add_to_path = "/home/Adithya/Documents/"
 
 # levels = [[1]]
