@@ -140,4 +140,8 @@ print(loss_settings)
 print(segmentation_hyperparams)
 
 letters = constants.greek_letters.keys()
+num_letters = len(letters)
+
+CLASSIFYING = 0
+RECONSTRUCTING = 1
 # letters = ["ALPHA"]
