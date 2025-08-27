@@ -82,7 +82,7 @@ def train_model():
 
     # compiled_train_epoch = train_epoch
     # compiled_evaluate_epoch = evaluate_epoch
-    if settings.mode == settings.RECONSTRUCTING
+    if settings.mode == settings.RECONSTRUCTING:
         criterion = MetaLoss()
     else:
         criterion = torch.nn.CrossEntropyLoss()

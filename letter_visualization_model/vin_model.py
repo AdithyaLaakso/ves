@@ -83,6 +83,5 @@ class HybridVisionNystromformer(nn.Module):
 def build_model():
     model = HybridVisionNystromformer(
         num_landmarks=64,
-        ff_dropout=0.1,
     )
     return model
