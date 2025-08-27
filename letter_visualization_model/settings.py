@@ -65,27 +65,9 @@ learning_rate_gamma=0.9
 
 num_workers=1
 
-<<<<<<< HEAD
 # data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 add_to_path = "/home/Adithya/Documents/"
-<<<<<<< HEAD
-<<<<<<< HEAD
-data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json" #"C:\\Users\\randt\\OneDrive\\Documents\\Vesuvius\\ves\\synthetic_ct_images\\paths.json" 
-=======
-# data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
->>>>>>> fd80bc7b1 (commiting before adding logs)
-# add_to_path = "/home/Adithya/Documents/"
-add_to_path = ""
-=======
-# add_to_path = ""
->>>>>>> d755dd89b (cleanup)
-=======
-data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
-# data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
-# add_to_path = "/home/Adithya/Documents/"
-add_to_path = ""
->>>>>>> 2b175369d (commit before merge)
 
 levels = [i for i in range(0, 25)]
 # levels = [0]
@@ -98,8 +80,8 @@ patch_sizes=(4, 8)
 in_channels=1
 out_channels=1
 embed_size=800
-num_blocks=8
-num_heads=8
+num_blocks=10
+num_heads=20
 dropout=0.2
 output_size=32
 use_gradient=True
