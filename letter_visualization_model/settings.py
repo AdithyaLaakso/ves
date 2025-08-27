@@ -67,7 +67,7 @@ num_workers=1
 
 # data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 add_to_path = "/home/Adithya/Documents/"
-data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json" #"C:\\Users\\randt\\OneDrive\\Documents\\Vesuvius\\ves\\synthetic_ct_images\\paths.json" 
+data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json" #"C:\\Users\\randt\\OneDrive\\Documents\\Vesuvius\\ves\\synthetic_ct_images\\paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
 # levels = [[1]]
@@ -140,9 +140,10 @@ print(loss_settings)
 print(segmentation_hyperparams)
 
 letters = constants.greek_letters.keys()
+letter_to_idx = constants.greek_letters
 num_letters = len(letters)
 
 CLASSIFYING = 0
 RECONSTRUCTING = 1
-mode = RECONSTRUCTING
+mode = CLASSIFYING
 # letters = ["ALPHA"]

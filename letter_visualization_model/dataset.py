@@ -75,7 +75,7 @@ class SegData(Dataset):
         output_img = output_img.resize(self.output_size, Image.Resampling.BILINEAR)
         mask_array = np.array(output_img, dtype=np.float32) / 255.0
         mask_tensor = torch.from_numpy((mask_array > mask_array.mean()).astype(np.float32)).unsqueeze(0)
-  
+
 
         # Data augmentation: random rotation
         rot_steps = random.choice([0, 1, 2, 3])
@@ -111,15 +111,15 @@ class SegData(Dataset):
         input_array = np.array(input_img, dtype=np.float32) / 255.0
         input_tensor = torch.from_numpy(input_array).unsqueeze(0)  # (1, H, W)
 
-        letter = settings.letters[item[2]]
-        label = settings.letter_to_idx[letter]
+        # letter = settings.letters[item[2]]
+        label = settings.letter_to_idx[item[2]]
         return input_tensor, label
 
 def collate_fn(batch, device="cuda"):
-    inputs, masks = zip(*batch)
+    inputs, labels = zip(*batch)
     inputs = torch.stack(inputs).to(device)
-    masks = torch.stack(masks).to(device)
-    return inputs, masks
+    labels = torch.tensor(labels, dtype=torch.long, device=device)
+    return inputs, labels
 
 def create_loader(dataset, batch_size=32, shuffle=True, device=settings.device, num_workers=settings.num_workers):
     loader = DataLoader(
