@@ -59,6 +59,9 @@ class SegData(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx) -> Tuple[Tensor, Tensor]:
+
+        if settings.mode == settings.CLASSIFYING:
+            return self._get_item_classifying(idx)
         item = self.dataset[idx]
 
         # Load input image
@@ -72,6 +75,7 @@ class SegData(Dataset):
         output_img = output_img.resize(self.output_size, Image.Resampling.BILINEAR)
         mask_array = np.array(output_img, dtype=np.float32) / 255.0
         mask_tensor = torch.from_numpy((mask_array > mask_array.mean()).astype(np.float32)).unsqueeze(0)
+  
 
         # Data augmentation: random rotation
         rot_steps = random.choice([0, 1, 2, 3])
@@ -97,6 +101,19 @@ class SegData(Dataset):
             mask_tensor = torch.flip(mask_tensor, dims=[1, 0])
 
         return input_tensor, mask_tensor
+
+    def _get_item_classifying(self, idx) -> Tuple[Tensor, int]:
+        item = self.dataset[idx]
+
+        # Load input image
+        input_img = Image.open(settings.add_to_path + item[0]).convert("L")  # grayscale
+        input_img = input_img.resize(self.input_size, Image.Resampling.BILINEAR)
+        input_array = np.array(input_img, dtype=np.float32) / 255.0
+        input_tensor = torch.from_numpy(input_array).unsqueeze(0)  # (1, H, W)
+
+        letter = settings.letters[item[2]]
+        label = settings.letter_to_idx[letter]
+        return input_tensor, label
 
 def collate_fn(batch, device="cuda"):
     inputs, masks = zip(*batch)
