@@ -144,4 +144,5 @@ num_letters = len(letters)
 
 CLASSIFYING = 0
 RECONSTRUCTING = 1
+mode = RECONSTRUCTING
 # letters = ["ALPHA"]

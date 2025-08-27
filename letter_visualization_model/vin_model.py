@@ -33,9 +33,8 @@ class HybridVisionNystromformer(nn.Module):
     def __init__(
         self,
         num_landmarks=64,
-        mode = settings.RECONSTRUCTING,
     ):
-        self.mode = mode
+        self.mode = settings.mode
         self.output_size = getattr(settings, "output_size", settings.image_size)
         self.in_channels = settings.in_channels
         self.out_channels = settings.out_channels
