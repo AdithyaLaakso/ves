@@ -31,7 +31,8 @@ def train_epoch(model, loader, optimizer, criterion, scaler):
         torch.cuda.empty_cache()
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(inputs, outputs, targets)
+        # loss = criterion(inputs, outputs, targets)
+        loss = criterion(outputs, targets)
 
         # print(loss)
         scaler.scale(loss).backward()
@@ -59,7 +60,8 @@ def evaluate_epoch(model, loader, criterion):
             targets = targets.to(device, non_blocking=True)
 
             outputs = model(inputs)
-            loss = criterion(inputs, outputs, targets)
+            # loss = criterion(inputs, outputs, targets)
+            loss = criterion(outputs, targets)
 
             total_loss += loss
             n_batches += 1
