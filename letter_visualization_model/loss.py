@@ -11,6 +11,7 @@ class MetaLoss(nn.Module):
     def __init__(self):
         super().__init__()
         self.BSL = BinarySegmentationLoss()
+        self.cross_entropy = nn.CrossEntropyLoss()
 
         self.meta_div_weight = settings.meta_div_weight
 
@@ -18,6 +19,7 @@ class MetaLoss(nn.Module):
         self.meta_b_weight = settings.meta_b_weight
         self.meta_m_weight = settings.meta_m_weight
         self.meta_d_weight = settings.meta_d_weight
+        self.meta_c_weight = settings.meta_c_weight
 
         self.writer = SummaryWriter(settings.log_dir) if settings.log_dir is not None else None
 
@@ -28,6 +30,8 @@ class MetaLoss(nn.Module):
             "focal": 0.0,
             "mse": 0.0
         }
+        if settings.mode == settings.MULTITASK:
+            self._running_stats["classification"] = 0.0
         self._counter = 0
         self._runner = 1
         self.print_every_batches = settings.print_every_batches
@@ -42,8 +46,9 @@ class MetaLoss(nn.Module):
     @torch.compile
     def forward(self, input, pred, target):
         # before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
-        after, (a_d, a_b, a_f, a_m) = self.BSL(pred, target)
-
+        after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], target[0])
+        if settings.mode == settings.MULTITASK:
+            a_c = self.cross_entropy(pred[1], target[1])
         # f_d = self.operation(a_d, b_d / self.meta_d_weight)
         # f_b = self.operation(a_b, b_b / self.meta_b_weight)
         # f_f = self.operation(a_f, b_f / self.meta_f_weight)
@@ -53,16 +58,21 @@ class MetaLoss(nn.Module):
         # final = (f_d + f_b + f_f)
 
         # self.update_running_stats(f_d, f_b, f_f, 0)
-        self.update_running_stats(a_d, a_b, a_f, a_m)
+        if settings.mode == settings.MULTITASK:
+            self.update_running_stats(a_d, a_b, a_f, a_m, a_c)
+        else:
+            self.update_running_stats(a_d, a_b, a_f, a_m)
         self.global_step = self.global_step + 1
 
         return after
 
-    def update_running_stats(self, dice_val, boundary_val, focal_val, mse_val):
+    def update_running_stats(self, dice_val, boundary_val, focal_val, mse_val, classification_val=None):
         self._running_stats["dice"] += dice_val
         self._running_stats["boundary"] += boundary_val
         self._running_stats["focal"] += focal_val
         self._running_stats["mse"] += mse_val
+        if settings.mode == settings.MULTITASK:
+            self._running_stats["classification"] += classification_val
 
         # self._counter += 1
         # if self._counter >= self.print_every_batches:
@@ -71,12 +81,16 @@ class MetaLoss(nn.Module):
         mean_f = self._running_stats["focal"]
         mean_m = self._running_stats["mse"]
         mean_total = mean_d + mean_b + mean_m + mean_f
-
+        if settings.mode == settings.MULTITASK:
+            mean_c = self._running_stats["classification"]
+            mean_total += mean_c
         # if self.writer is not None and global_step is not None:
         self.writer.add_scalar("Loss/Dice", mean_d / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/Boundary", mean_b / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/Focal", mean_f / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/MSE", mean_m / self.global_step, self.global_step)
+        if settings.mode == settings.MULTITASK:
+            self.writer.add_scalar("Loss/Classification", mean_c / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/total", mean_total / self.global_step, self.global_step)
 
 class BinarySegmentationLoss(nn.Module):

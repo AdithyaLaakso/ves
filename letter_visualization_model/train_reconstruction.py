@@ -84,9 +84,9 @@ def train_model():
 
     # compiled_train_epoch = train_epoch
     # compiled_evaluate_epoch = evaluate_epoch
-    if settings.mode == settings.RECONSTRUCTING:
+    if settings.mode == settings.RECONSTRUCTION or settings.mode == settings.MULTITASK:
         criterion = MetaLoss()
-    else:
+    elif settings.mode == settings.CLASSIFICATION:
         criterion = torch.nn.CrossEntropyLoss()
 
     print(f"training levels: {settings.levels}")

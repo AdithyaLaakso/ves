@@ -60,9 +60,10 @@ class SegData(Dataset):
 
     def __getitem__(self, idx) -> Tuple[Tensor, Tensor]:
 
-        if settings.mode == settings.CLASSIFYING:
+        if settings.mode == settings.CLASSIFICATION:
             return self._get_item_classifying(idx)
         item = self.dataset[idx]
+        label = settings.letter_to_idx[item[2]]
 
         # Load input image
         input_img = Image.open(settings.add_to_path + item[0]).convert("L")  # grayscale
@@ -99,8 +100,11 @@ class SegData(Dataset):
         elif flip_type == 4:
             input_tensor = torch.flip(input_tensor, dims=[1, 0])
             mask_tensor = torch.flip(mask_tensor, dims=[1, 0])
-
-        return input_tensor, mask_tensor
+        if settings.mode == settings.RECONSTRUCTION:
+            return input_tensor, mask_tensor
+        elif settings.mode == settings.MULTITASK:
+            return input_tensor, (mask_tensor, label)
+        raise ValueError(f"Unknown mode: {settings.mode}")
 
     def _get_item_classifying(self, idx) -> Tuple[Tensor, int]:
         item = self.dataset[idx]
