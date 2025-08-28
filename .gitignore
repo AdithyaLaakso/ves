@@ -10,3 +10,4 @@ bruh*
 *logs/*
 *logs_archive
 *.stamp
+lightning_logs/

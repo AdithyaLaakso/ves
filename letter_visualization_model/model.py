@@ -460,10 +460,10 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
             SimpleEncoderBlock(self.embed_size, self.num_heads, self.dropout)
             for i in range(self.num_blocks)
         ])
-
+        self.classifier = #PLACEHOLDER
         # Multiscale decoder
         self.decoder = MultiScaleDecoder(embed_dim=self.embed_size, out_chans=self.out_channels)
-
+    ### TODO: Add a layer to predict letter class from the tokens.  USE SELF.CLASSIFIER SOMEWHERE ###
     def forward(self, x):
         B = x.size(0)
         tokens, HcWc, HfWf, mask_flat = self.encoder(x)

@@ -106,6 +106,7 @@ meta_div_weight = 0.0
 meta_f_weight = 1.0
 meta_b_weight = 2.0
 meta_d_weight = 3.0
+meta_c_weight = 1.0
 meta_m_weight = 0.0
 meta_s = 1.0
 
@@ -133,3 +134,11 @@ print(segmentation_hyperparams)
 
 letters = constants.greek_letters.keys()
 # letters = ["ALPHA"]
+
+RECONSTRUCTION = 0
+
+CLASSIFICATION = 1
+
+MULTITASK = 2
+
+mode = MULTITASK
