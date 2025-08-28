@@ -460,7 +460,8 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
             SimpleEncoderBlock(self.embed_size, self.num_heads, self.dropout)
             for i in range(self.num_blocks)
         ])
-        self.classifier = #PLACEHOLDER
+        if settings.mode == settings.MULTITASK:
+            self.classifier = #PLACEHOLDER
         # Multiscale decoder
         self.decoder = MultiScaleDecoder(embed_dim=self.embed_size, out_chans=self.out_channels)
     ### TODO: Add a layer to predict letter class from the tokens.  USE SELF.CLASSIFIER SOMEWHERE ###
@@ -488,12 +489,17 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Recombine the processed tokens
         processed_tokens = torch.cat([coarse_tokens, fine_tokens], dim=1)
-
+        if settings.mode == settings.MULTITASK:
+            label = # self.classifier(processed_tokens.view(B, -1))
         # Decode
         out = self.decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
         out  = F.interpolate(out, size=(32,32), mode="bilinear")
-
-        return out
+        if settings.mode == settings.MULTITASK:
+            return (out, label)
+        elif settings.mode == settings.RECONSTRUCTION:
+            return out
+        else :
+            raise ValueError(f"Unknown mode: {settings.mode}")
 
 def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
