@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torch.utils.tensorboard import SummaryWriter
 
 import settings
@@ -57,7 +58,6 @@ class MetaLoss(nn.Module):
 
         return after
 
-    @torch.compile
     def update_running_stats(self, dice_val, boundary_val, focal_val, mse_val):
         self._running_stats["dice"] += dice_val
         self._running_stats["boundary"] += boundary_val
@@ -88,7 +88,7 @@ class BinarySegmentationLoss(nn.Module):
         self.mse_weight = settings.loss_settings.mse_weight
         self.focal_alpha = settings.loss_settings.focal_alpha
         self.focal_gamma = settings.loss_settings.focal_gamma
-        self.mse_loss = nn.MSELoss()
+        self.mse_loss = StructuralSimilarityIndexMeasure(data_range=1.0).to(settings.device)
         self.d = nn.BCELoss()
 
 
@@ -96,14 +96,17 @@ class BinarySegmentationLoss(nn.Module):
     def forward(self, pred_masks, target_masks) -> tuple[float, tuple[float, float, float, float]]:
         target_masks = target_masks.float()
         pred_probs = torch.sigmoid(pred_masks)
-        #pred_porbs = pred_masks
 
         # Compute all losses
         dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
         boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
-        pred_probs = torch.nn.functional.interpolate(pred_probs, size=target_masks.shape[-2:], mode='bilinear', align_corners=False)
         mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
+
+        dice_val = dice_val * dice_val
+        boundary_val = boundary_val * boundary_val * boundary_val
+        focal_val = focal_val
+        mse_val = mse_val
 
         # Weighted sum
         loss = (
@@ -118,7 +121,6 @@ class BinarySegmentationLoss(nn.Module):
 
 @torch.compile
 def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
-    pred = torch.nn.functional.interpolate(pred, size=target.shape[-2:], mode='bilinear', align_corners=False)
     pred = torch.clamp(pred, epsilon, 1.0 - epsilon)
     pt = pred * target + (1 - pred) * (1 - target)  # pt = p if target=1 else 1-p
     alpha_t = alpha * target + (1 - alpha) * (1 - target)
@@ -134,7 +136,6 @@ def dice_loss(pred, target, loss):
     # union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
     # dice = (2. * intersection + epsilon) / (union + epsilon)
     # return 1 - dice.mean()
-    pred = torch.nn.functional.interpolate(pred, size=target.shape[-2:], mode='bilinear', align_corners=False)
     return loss(pred, target)
 
 @torch.compile
@@ -187,8 +188,10 @@ def compute_signed_distance_map_gpu(gt: torch.Tensor) -> torch.Tensor:
     return phi_G
 
 @torch.compile
-def boundary_loss(s_theta: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
-    s_theta = torch.nn.functional.interpolate(s_theta, size=g.shape[-2:], mode='bilinear', align_corners=False)
+def boundary_loss(s_theta, g):
     phi_G = compute_signed_distance_map_gpu(g)
-    loss = torch.mean(torch.abs(phi_G * s_theta))
+
+    # Reduce penalty for distant pixels
+    weight = torch.exp(-torch.abs(phi_G) / 10.0)  # Exponential decay
+    loss = torch.mean(weight * torch.abs(phi_G * s_theta))
     return loss
