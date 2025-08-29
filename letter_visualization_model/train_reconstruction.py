@@ -31,7 +31,6 @@ def train_epoch(model, loader, optimizer, criterion, scaler):
         torch.cuda.empty_cache()
         optimizer.zero_grad()
         outputs = model(inputs)
-        # loss = criterion(inputs, outputs, targets)
         loss = criterion(outputs, targets)
 
         # print(loss)
@@ -42,9 +41,6 @@ def train_epoch(model, loader, optimizer, criterion, scaler):
 
         total_loss += loss
         n_batches += 1
-        # if step % settings.print_every_batches == 0:
-        #     path = f"{settings.save_to_dir}/{step // settings.print_every_batches}.pth"
-        #     torch.save(model.state_dict(), path)
 
     return total_loss / max(n_batches, 1)
 
@@ -56,13 +52,8 @@ def evaluate_epoch(model, loader, criterion):
     with torch.no_grad():
         for inputs, targets in loader:
             torch.cuda.empty_cache()
-            inputs = inputs.to(device, non_blocking=True)
-            targets = targets.to(device, non_blocking=True)
-
             outputs = model(inputs)
-            # loss = criterion(inputs, outputs, targets)
             loss = criterion(outputs, targets)
-
             total_loss += loss
             n_batches += 1
 
