@@ -44,7 +44,7 @@ track_levels = True
 
 LossSettings = namedtuple('LossSettings', [
     'dice_weight', 'mse_weight', 'boundary_weight',
-    'focal_weight', 'focal_alpha', 'focal_gamma', "class_weight"
+    'focal_weight', 'focal_alpha', 'focal_gamma', "class_weight", "class_weight_delta"
 ])
 
 SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
@@ -127,7 +127,8 @@ loss_settings = LossSettings(
     mse_weight=0.0,
     boundary_weight=0.0,
     focal_weight=0.0,
-    class_weight=1.0,
+    class_weight=0.05,
+    class_weight_delta=0.05,
     focal_alpha=0.2,
     focal_gamma=2.0
 )
@@ -137,7 +138,6 @@ print(segmentation_hyperparams)
 
 letters = constants.greek_letters.keys()
 letter_to_idx = constants.greek_letters
-print(letter_to_idx)
 # letters = ["ALPHA"]
 
 RECONSTRUCTION = 0
