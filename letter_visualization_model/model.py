@@ -184,6 +184,11 @@ class VisionTransformerInput(nn.Module):
         x = x.flatten(2).transpose(1, 2)       # (B, N, embed)
         pos_enc = self.positional_encoding.unsqueeze(0)
         x = x + pos_enc
+
+        # if settings.mode == settings.CLASSIFICATION or settings.mode == settings.MULTITASK:
+        #     classification = self.classifier(x)
+        #     return (x, (self.n_h, self.n_w)), classification
+        # else:
         return x, (self.n_h, self.n_w)
 
 class ConvDecoder(nn.Module):
@@ -422,10 +427,7 @@ class SimpleEncoderBlock(nn.Module):
         return x
 
 class VisionTransformerForSegmentationMultiScale(nn.Module):
-    """
-    Improved multiscale vision transformer with separate handling for regular and irregular tokens
-    """
-    def __init__(self, use_gradient_checkpointing=settings.use_gradient):
+    def __init__(self, use_gradient_checkpointing=settings.use_gradient, num_classes=25):
         super().__init__()
         # read settings with sensible fallbacks
         self.output_size = settings.output_size
@@ -452,19 +454,22 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
             SelfAttentionEncoderBlock(self.embed_size, self.num_heads, self.dropout,
                                       window_size=window_size,
                                       use_checkpoint=settings.use_gradient,
-                                      mlp_dilation=2 if i%2==0 else 3)
+                                      mlp_dilation=2 if i % 2 == 0 else 3)
             for i in range(self.num_blocks)
         ])
 
         # Fine transformer without positional bias (for irregular tokens)
         self.fine_transformer = nn.ModuleList([
             SimpleEncoderBlock(self.embed_size, self.num_heads, self.dropout)
-            for i in range(self.num_blocks)
+            for _ in range(self.num_blocks)
         ])
-        if settings.mode == settings.MULTITASK:
-            self.classifier = Classifier()
-        # Multiscale decoder
+
+        # Multiscale decoder for segmentation
         self.decoder = MultiScaleDecoder(embed_dim=self.embed_size, out_chans=self.out_channels)
+
+        # Classification head (hybrid: tokens + segmentation map)
+        if settings.mode == settings.MULTITASK:
+            self.classifier = HybridClassifier(embed_dim=self.embed_size, num_classes=num_classes)
 
     def forward(self, x):
         B = x.size(0)
@@ -472,7 +477,6 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Get dimensions
         Hc, Wc = HcWc
-        Hf, Wf = HfWf
         Nc = Hc * Wc
 
         # Split tokens back to coarse and fine
@@ -491,39 +495,59 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
         # Recombine the processed tokens
         processed_tokens = torch.cat([coarse_tokens, fine_tokens], dim=1)
 
-        # Decode
+        # Decode segmentation map
         out = self.decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
-        out  = F.interpolate(out, size=(32,32), mode="bilinear")
+        out = F.interpolate(out, size=(32, 32), mode="bilinear")
 
         if settings.mode == settings.MULTITASK:
-            label = self.classifier(out)
-            return (out, label)
+            label = self.classifier(processed_tokens, out)  # <-- pass both
+            return out, label
         elif settings.mode == settings.RECONSTRUCTION:
             return out
         else:
             raise ValueError(f"Unknown mode: {settings.mode}")
 
-class Classifier(nn.Module):
-    def __init__(self, num_classes=25):
-        super(Classifier, self).__init__()
-        # input: (1, 32, 32)
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1) # -> (16, 32, 32)
-        self.pool = nn.MaxPool2d(2, 2) # -> (16, 16, 16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1) # -> (32, 16, 16)
-        self.pool2 = nn.MaxPool2d(2, 2) # -> (32, 8, 8)
+class HybridClassifier(nn.Module):
+    """
+    Combines global token features + segmentation map features for classification
+    """
+    def __init__(self, embed_dim=128, num_classes=25):
+        super().__init__()
+        # Token branch
+        self.token_fc = nn.Sequential(
+            nn.Linear(embed_dim, 256),
+            nn.ReLU(),
+        )
 
+        # Segmentation map branch
+        self.seg_conv = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),  # (16, 16, 16)
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4))  # -> (32, 4, 4)
+        )
 
-        self.fc1 = nn.Linear(32 * 8 * 8, 128)
-        self.fc2 = nn.Linear(128, num_classes)
+        # Fusion + output
+        self.fc = nn.Sequential(
+            nn.Linear(256 + 32 * 4 * 4, 256),
+            nn.ReLU(),
+            nn.Linear(256, num_classes)
+        )
 
+    def forward(self, tokens, seg_map):
+        # Token branch (mean-pool over tokens)
+        pooled = tokens.mean(dim=1)           # (B, embed_dim)
+        token_feat = self.token_fc(pooled)    # (B, 256)
 
-    def forward(self, x: torch.Tensor):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool2(F.relu(self.conv2(x)))
-        x = x.view(-1, 32 * 8 * 8)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+        # Segmentation branch
+        seg_feat = self.seg_conv(seg_map)     # (B, 32, 4, 4)
+        seg_feat = seg_feat.flatten(1)        # (B, 512)
+
+        # Fuse
+        fused = torch.cat([token_feat, seg_feat], dim=1)
+        return self.fc(fused)
 
 def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)

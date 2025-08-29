@@ -48,7 +48,7 @@ class MetaLoss(nn.Module):
         # before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
         after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], target[0])
         if settings.mode == settings.MULTITASK:
-            a_c = self.cross_entropy(pred[1], target[1])
+            a_c = self.cross_entropy(pred[1], target[1]) * settings.loss_settings.class_weight
         else:
             a_c = 0
         # f_d = self.operation(a_d, b_d / self.meta_d_weight)
