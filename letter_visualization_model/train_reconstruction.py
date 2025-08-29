@@ -21,7 +21,7 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
-def train_epoch(model, loader, optimizer, criterion, scaler):
+def train_epoch(model, loader, optimizer, criterion, scaler, epoch=0):
     total_loss = torch.zeros(1, device=device)
     n_batches = 0
 
@@ -31,7 +31,8 @@ def train_epoch(model, loader, optimizer, criterion, scaler):
         torch.cuda.empty_cache()
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        # loss = criterion(inputs, outputs, targets)
+        loss = criterion(outputs, targets, epoch=epoch)
 
         # print(loss)
         scaler.scale(loss).backward()
@@ -41,10 +42,13 @@ def train_epoch(model, loader, optimizer, criterion, scaler):
 
         total_loss += loss
         n_batches += 1
+        # if step % settings.print_every_batches == 0:
+        #     path = f"{settings.save_to_dir}/{step // settings.print_every_batches}.pth"
+        #     torch.save(model.state_dict(), path)
 
     return total_loss / max(n_batches, 1)
 
-def evaluate_epoch(model, loader, criterion):
+def evaluate_epoch(model, loader, criterion, epoch=0):
     total_loss = torch.zeros(1, device=device)
     n_batches = 0
 
@@ -53,7 +57,8 @@ def evaluate_epoch(model, loader, criterion):
         for inputs, targets in loader:
             torch.cuda.empty_cache()
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            loss = criterion(outputs, targets, epoch=epoch)
+
             total_loss += loss
             n_batches += 1
 
@@ -75,12 +80,13 @@ def train_model():
 
     # compiled_train_epoch = train_epoch
     # compiled_evaluate_epoch = evaluate_epoch
-    if settings.mode == settings.RECONSTRUCTION or settings.mode == settings.MULTITASK:
-        criterion = MetaLoss()
-    elif settings.mode == settings.CLASSIFICATION:
+    criterion = MetaLoss()
+
+    if settings.mode == settings.CLASSIFICATION:
         criterion = torch.nn.CrossEntropyLoss()
 
     print(f"training levels: {settings.levels}")
+    schedule_step = 0
     for level in settings.levels:
         if level is None:
             continue
