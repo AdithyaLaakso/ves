@@ -33,13 +33,13 @@ class MetaLoss(nn.Module):
         self.print_every_batches = settings.print_every_batches
         self.global_step = 1
 
-    @torch.compile
+    # @torch.compile
     def operation(self, a, b):
         # div = (a / torch.sqrt(b + epsilon)) * self.meta_div_weight
         # return (div) / (self.meta_add_weight + self.meta_div_weight) + self.meta_s * a
         return a
 
-    @torch.compile
+    # @torch.compile
     def forward(self, input, pred, target):
         # before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
         after, (a_d, a_b, a_f, a_m) = self.BSL(pred, target)
@@ -92,7 +92,7 @@ class BinarySegmentationLoss(nn.Module):
         self.d = nn.BCELoss()
 
 
-    @torch.compile
+    # @torch.compile
     def forward(self, pred_masks, target_masks) -> tuple[float, tuple[float, float, float, float]]:
         target_masks = target_masks.float()
         pred_probs = torch.sigmoid(pred_masks)
@@ -103,10 +103,10 @@ class BinarySegmentationLoss(nn.Module):
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
         mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
 
-        dice_val = dice_val * dice_val
-        boundary_val = boundary_val * boundary_val * boundary_val
-        focal_val = focal_val
-        mse_val = mse_val
+        # dice_val = dice_val * dice_val * dice_val
+        # boundary_val = boundary_val * boundary_val * boundary_val * boundary_val * boundary_val
+        # focal_val = focal_val * focal_val
+        # mse_val = mse_val * mse_val
 
         # Weighted sum
         loss = (
@@ -119,7 +119,7 @@ class BinarySegmentationLoss(nn.Module):
         return loss, (dice_val, boundary_val, focal_val, mse_val)
 
 
-@torch.compile
+# @torch.compile
 def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
     pred = torch.clamp(pred, epsilon, 1.0 - epsilon)
     pt = pred * target + (1 - pred) * (1 - target)  # pt = p if target=1 else 1-p
@@ -127,7 +127,7 @@ def focal_loss(pred, target, alpha=0.25, gamma=2.0, epsilon=1e-6):
     loss = -alpha_t * (1 - pt) ** gamma * torch.log(pt)
     return loss.mean()
 
-@torch.compile
+# @torch.compile
 def dice_loss(pred, target, loss):
     # pred = torch.nn.functional.interpolate(pred, size=target.shape[-2:], mode='bilinear', align_corners=False)
     # pred = pred.contiguous()
@@ -138,7 +138,7 @@ def dice_loss(pred, target, loss):
     # return 1 - dice.mean()
     return loss(pred, target)
 
-@torch.compile
+# @torch.compile
 def euclidean_distance_transform_torch(mask: torch.Tensor) -> torch.Tensor:
     N, _, H, W = mask.shape
     device = mask.device
@@ -178,7 +178,7 @@ def euclidean_distance_transform_torch(mask: torch.Tensor) -> torch.Tensor:
     return torch.stack(dist_maps, dim=0)
 
 
-@torch.compile
+# @torch.compile
 def compute_signed_distance_map_gpu(gt: torch.Tensor) -> torch.Tensor:
     gt_bool = gt > 0.5
     dist_outside = euclidean_distance_transform_torch(gt_bool.float())
@@ -187,7 +187,7 @@ def compute_signed_distance_map_gpu(gt: torch.Tensor) -> torch.Tensor:
 
     return phi_G
 
-@torch.compile
+# @torch.compile
 def boundary_loss(s_theta, g):
     phi_G = compute_signed_distance_map_gpu(g)
 

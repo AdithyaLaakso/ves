@@ -178,7 +178,7 @@ class VisionTransformerInput(nn.Module):
         pe: torch.Tensor = get_2d_sinusoidal_encoding(self.n_h, self.n_w, embed_size)
         self.register_buffer("positional_encoding", pe, persistent=False)
 
-    @torch.compile
+    # @torch.compile
     def forward(self, x: torch.Tensor):
         x = self.proj(x)                       # (B, embed, n_h, n_w)
         x = x.flatten(2).transpose(1, 2)       # (B, N, embed)
@@ -256,12 +256,12 @@ class SelfAttentionEncoderBlock(nn.Module):
     def _mlp_forward(self, x, grid_size):
         return x + self.mlp(self.ln2(x), grid_size)
 
-    @torch.compile
     def forward(self, x, grid_size):
-        # x = checkpoint(self._attn_forward(x), use_reentrant=True)
-        # x = checkpoint(self._mlp_forward(x, grid_size), use_reentrant=True)
-        x = self._attn_forward(x)
-        x = self._mlp_forward(x, grid_size)
+        x = checkpoint(self._attn_forward, x, use_reentrant=False)
+        x = checkpoint(lambda inp: self._mlp_forward(inp, grid_size), x, use_reentrant=False)
+
+        # x = self._attn_forward(x)
+        # x = self._mlp_forward(x, grid_size)
         return x
 
 class MultiScaleDecoder(nn.Module):
@@ -491,7 +491,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Decode
         out = self.decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
-        out  = F.interpolate(out, size=(32,32), mode="bilinear")
+        out  = F.interpolate(out, size=(settings.output_size,settings.output_size), mode="bilinear")
 
         return out
 
@@ -504,7 +504,8 @@ def build_model(compile_model=False, load_from=None, device=settings.device):
     elif load_from is not None:
         state_dict = torch.load(load_from)
         model.load_state_dict(state_dict, strict=False)
-    if compile_model:
-        model = torch.compile(model, dynamic=True)
+
+    # if compile_model:
+    #     model = torch.compile(model, dynamic=True)
 
     return model.to(device)

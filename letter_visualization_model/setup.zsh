@@ -16,6 +16,7 @@ export KMP_BLOCKTIME=0                    # Threads sleep immediately when idle 
 # ----------------------------
 export PYTORCH_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_mb:128,expandable_segments:True
 export TORCH_DISABLE_TF32_LEGACY_API=1
+export CUDA_LAUNCH_BLOCKING=1
 
 # ----------------------------
 # Optional PyTorch tuning
@@ -29,6 +30,7 @@ export TORCH_TRACE=./logs.txt
 # export TORCH_LOGS=
 export TORCHDYNAMO_VERBOSE=1
 # export TORCH_COMPILE_DEBUG=
+export TORCHDYNAMO_LOG_LEVEL=debug
 
 mkdir -p checkpoints/
 rm -f checkpoints/* &> /dev/null || true
@@ -42,6 +44,5 @@ file_name=$stamp".stamp"
 touch $file_name
 killall tensorboard
 nohup tensorboard --logdir ./logs/$stamp &
-
 
 python3 train_reconstruction.py && python3 visualize_model.py

@@ -2,6 +2,7 @@ import torch
 import torch._dynamo as dynamo
 import torch.multiprocessing as mp
 
+import torch._dynamo
 import constants
 
 from collections import namedtuple
@@ -29,6 +30,12 @@ torch._dynamo.config.capture_scalar_outputs = True
 
 torch._dynamo.config.verbose = True
 
+print("compile available:", hasattr(torch, "compile"))
+
+# Hard-disable dynamo (eventually need to fix errors and remove)
+torch._dynamo.config.suppress_errors = False
+torch._dynamo.config.disable = True
+
 os.environ["TORCH_LOGS"] = "+dynamo"
 
 os.environ["TORCHDYNAMO_VERBOSE"] = "1"
@@ -54,23 +61,24 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 segmentation_hyperparams = SegmentationHyperparams(
     num_epochs=5,
     batch_size=8,
-    learning_rate=1e-3,
+    learning_rate=5e-5,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
 
 # track_levels = True
 
-learning_rate_gamma=0.9
+learning_rate_gamma=0.95
 
-num_workers=1
+num_workers=2
 
-# data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
-data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
-add_to_path = "/home/Adithya/Documents/"
+data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
+# data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
+# add_to_path = "/home/Adithya/Documents/"
+add_to_path = ""
 
-levels = [i for i in range(0, 25)]
-# levels = [0]
+# levels = [i for i in range(0, 10)]
+levels = [18, 19, 20]
 
 display_levels = levels
 
@@ -79,9 +87,9 @@ patch_sizes=(4, 8)
 #patch_size=4
 in_channels=1
 out_channels=1
-embed_size=800
-num_blocks=10
-num_heads=20
+embed_size=250
+num_blocks=50
+num_heads=10
 dropout=0.2
 output_size=32
 use_gradient=True
@@ -120,10 +128,10 @@ meta_s = 1.0
 # meta_d_weight /= meta_multiloss_scale
 
 loss_settings = LossSettings(
-    dice_weight=5.0,
-    mse_weight=5.0,
-    boundary_weight=1.0,
-    focal_weight=20.0,
+    dice_weight=1.0,
+    mse_weight=0.0,
+    boundary_weight=0.0,
+    focal_weight=0.0,
     focal_alpha=0.2,
     focal_gamma=2.0
 )
