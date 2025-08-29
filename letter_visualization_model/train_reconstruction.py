@@ -8,7 +8,7 @@ from torch.utils.data import Subset
 import settings
 import dataset
 #from model import create_enhanced_memory_efficient_vit as create_memory_efficient_vit
-from vin_model import build_model
+from model import build_model
 from loss import MetaLoss
 from torch.amp.grad_scaler import GradScaler
 

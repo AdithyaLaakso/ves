@@ -258,10 +258,11 @@ class SelfAttentionEncoderBlock(nn.Module):
 
     @torch.compile
     def forward(self, x, grid_size):
-        # x = checkpoint(self._attn_forward(x), use_reentrant=True)
-        # x = checkpoint(self._mlp_forward(x, grid_size), use_reentrant=True)
-        x = self._attn_forward(x)
-        x = self._mlp_forward(x, grid_size)
+        x = checkpoint(lambda inp: self._mlp_forward(inp, grid_size), x, use_reentrant=True)
+        x = checkpoint(self._attn_forward, x, use_reentrant=True)
+
+        # x = self._attn_forward(x)
+        # x = self._mlp_forward(x, grid_size)
         return x
 
 class MultiScaleDecoder(nn.Module):
@@ -461,10 +462,10 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
             for i in range(self.num_blocks)
         ])
         if settings.mode == settings.MULTITASK:
-            self.classifier = #PLACEHOLDER
+            self.classifier = Classifier()
         # Multiscale decoder
         self.decoder = MultiScaleDecoder(embed_dim=self.embed_size, out_chans=self.out_channels)
-    ### TODO: Add a layer to predict letter class from the tokens.  USE SELF.CLASSIFIER SOMEWHERE ###
+
     def forward(self, x):
         B = x.size(0)
         tokens, HcWc, HfWf, mask_flat = self.encoder(x)
@@ -489,17 +490,40 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Recombine the processed tokens
         processed_tokens = torch.cat([coarse_tokens, fine_tokens], dim=1)
-        if settings.mode == settings.MULTITASK:
-            label = # self.classifier(processed_tokens.view(B, -1))
+
         # Decode
         out = self.decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
         out  = F.interpolate(out, size=(32,32), mode="bilinear")
+
         if settings.mode == settings.MULTITASK:
+            label = self.classifier(out)
             return (out, label)
         elif settings.mode == settings.RECONSTRUCTION:
             return out
-        else :
+        else:
             raise ValueError(f"Unknown mode: {settings.mode}")
+
+class Classifier(nn.Module):
+    def __init__(self, num_classes=25):
+        super(Classifier, self).__init__()
+        # input: (1, 32, 32)
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1) # -> (16, 32, 32)
+        self.pool = nn.MaxPool2d(2, 2) # -> (16, 16, 16)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1) # -> (32, 16, 16)
+        self.pool2 = nn.MaxPool2d(2, 2) # -> (32, 8, 8)
+
+
+        self.fc1 = nn.Linear(32 * 8 * 8, 128)
+        self.fc2 = nn.Linear(128, num_classes)
+
+
+    def forward(self, x: torch.Tensor):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool2(F.relu(self.conv2(x)))
+        x = x.view(-1, 32 * 8 * 8)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
 def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)

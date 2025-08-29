@@ -62,6 +62,7 @@ class SegData(Dataset):
 
         if settings.mode == settings.CLASSIFICATION:
             return self._get_item_classifying(idx)
+
         item = self.dataset[idx]
         label = settings.letter_to_idx[item[2]]
 
@@ -122,8 +123,21 @@ class SegData(Dataset):
 def collate_fn(batch, device="cuda"):
     inputs, labels = zip(*batch)
     inputs = torch.stack(inputs).to(device)
-    labels = torch.tensor(labels, dtype=torch.long, device=device)
-    return inputs, labels
+
+    # Classification mode (labels are ints)
+    if isinstance(labels[0], int):
+        labels = torch.tensor(labels, dtype=torch.long, device=device)
+        return inputs, labels
+
+    # Multitask mode (labels are (mask, label))
+    elif isinstance(labels[0], tuple):
+        masks, class_labels = zip(*labels)
+        masks = torch.stack(masks).to(device)
+        class_labels = torch.tensor(class_labels, dtype=torch.long, device=device)
+        return inputs, (masks, class_labels)
+
+    else:
+        raise TypeError(f"Unexpected label type: {type(labels[0])}")
 
 def create_loader(dataset, batch_size=32, shuffle=True, device=settings.device, num_workers=settings.num_workers):
     loader = DataLoader(
