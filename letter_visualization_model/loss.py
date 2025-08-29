@@ -44,11 +44,13 @@ class MetaLoss(nn.Module):
         return a
 
     @torch.compile
-    def forward(self, input, pred, target):
+    def forward(self, pred, target):
         # before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
         after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], target[0])
         if settings.mode == settings.MULTITASK:
             a_c = self.cross_entropy(pred[1], target[1])
+        else:
+            a_c = 0
         # f_d = self.operation(a_d, b_d / self.meta_d_weight)
         # f_b = self.operation(a_b, b_b / self.meta_b_weight)
         # f_f = self.operation(a_f, b_f / self.meta_f_weight)
@@ -117,10 +119,10 @@ class BinarySegmentationLoss(nn.Module):
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
         mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
 
-        dice_val = dice_val * dice_val
-        boundary_val = boundary_val * boundary_val * boundary_val
-        focal_val = focal_val
-        mse_val = mse_val
+        # dice_val = dice_val * dice_val
+        # boundary_val = boundary_val * boundary_val * boundary_val
+        # focal_val = focal_val
+        # mse_val = mse_val
 
         # Weighted sum
         loss = (
