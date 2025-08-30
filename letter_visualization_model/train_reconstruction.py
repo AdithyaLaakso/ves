@@ -86,7 +86,7 @@ def train_model():
         criterion = torch.nn.CrossEntropyLoss()
 
     print(f"training levels: {settings.levels}")
-    schedule_step = 0
+    schedule_step = 1
     for level in settings.levels:
         if level is None:
             continue
@@ -120,15 +120,23 @@ def train_model():
         )
 
         for epoch in range(settings.segmentation_hyperparams.num_epochs):
+            print(f"On step {schedule_step}")
+            schedule_step += 1
             train_loss = compiled_train_epoch(
                 model,
                 train_loader,
                 optimizer,
                 criterion,
-                scaler
+                scaler,
+                epoch=epoch
             )
 
-            test_loss = compiled_evaluate_epoch(model, test_loader, criterion)
+            test_loss = compiled_evaluate_epoch(
+                model,
+                test_loader,
+                criterion,
+                epoch=epoch
+            )
 
             print(f"Epoch {epoch+1}/{settings.segmentation_hyperparams.num_epochs} | "
                   f"Train Loss: {train_loss/len(train_loader)} | "

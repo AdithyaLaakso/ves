@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -32,6 +31,8 @@ class PatchEmbed(nn.Module):
         self.patch_size = patch_size
         self.stride = stride
         self.embed_dim = embed_dim
+
+        #todo: try without this
         self.proj = nn.Conv2d(in_chans, embed_dim,
                               kernel_size=patch_size, stride=stride)
 
@@ -112,6 +113,7 @@ class Attention(nn.Module):
         self.proj = nn.Linear(dim[0], dim[0])
         # RPB will be set by the caller per scale (since window sizes differ)
         self.relative_position_bias = None
+
         # keep your (global) learnable bias but match shape on the fly
         self.global_bias = None  # lazy init
 
@@ -142,82 +144,6 @@ class Attention(nn.Module):
         out = (attn @ v).transpose(1, 2).reshape(B, N, C)
         out = self.proj(out)
         return out
-
-# Fix 1: Improved positional encoding with boundary normalization
-def get_2d_sinusoidal_encoding_fixed(n_h, n_w, d_model):
-    """Fixed version with better boundary handling"""
-    assert d_model % 4 == 0
-
-    pe = torch.zeros(n_h, n_w, d_model)
-    d_model_quarter = d_model // 4
-
-    # Use normalized positions to avoid boundary effects
-    pos_row = torch.linspace(0, 1, n_h).unsqueeze(1)
-    pos_col = torch.linspace(0, 1, n_w).unsqueeze(1)
-
-    div_term = torch.exp(torch.arange(0, d_model_quarter, 2) *
-                        -(math.log(10000.0) / d_model_quarter))
-
-    pe[:, :, 0:d_model_quarter:2] = torch.sin(pos_row * div_term * math.pi).unsqueeze(1)
-    pe[:, :, 1:d_model_quarter:2] = torch.cos(pos_row * div_term * math.pi).unsqueeze(1)
-    pe[:, :, d_model_quarter:d_model_half:2] = torch.sin(pos_col * div_term * math.pi).unsqueeze(0)
-    pe[:, :, d_model_quarter+1:d_model_half:2] = torch.cos(pos_col * div_term * math.pi).unsqueeze(0)
-
-    # Normalize to reduce boundary effects
-    pe = F.normalize(pe, dim=-1, p=2)
-
-    return pe.view(-1, d_model)
-
-class VisionTransformerInput(nn.Module):
-    def __init__(self, image_size, patch_size, in_channels, embed_size):
-        super().__init__()
-        self.proj = nn.Conv2d(in_channels, embed_size,
-                              kernel_size=patch_size, stride=patch_size)
-        self.n_h = image_size // patch_size
-        self.n_w = image_size // patch_size
-        pe: torch.Tensor = get_2d_sinusoidal_encoding(self.n_h, self.n_w, embed_size)
-        self.register_buffer("positional_encoding", pe, persistent=False)
-
-    @torch.compile
-    def forward(self, x: torch.Tensor):
-        x = self.proj(x)                       # (B, embed, n_h, n_w)
-        x = x.flatten(2).transpose(1, 2)       # (B, N, embed)
-        pos_enc = self.positional_encoding.unsqueeze(0)
-        x = x + pos_enc
-
-        # if settings.mode == settings.CLASSIFICATION or settings.mode == settings.MULTITASK:
-        #     classification = self.classifier(x)
-        #     return (x, (self.n_h, self.n_w)), classification
-        # else:
-        return x, (self.n_h, self.n_w)
-
-class ConvDecoder(nn.Module):
-    """Simple CNN for spatial reconstruction"""
-    def __init__(self, in_chans, out_chans):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(in_chans, 16, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 16, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, out_chans, 3, padding=1)
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-class MultiScaleVisionTransformerInput(nn.Module):
-    def __init__(self, image_size, in_channels, embed_size, patch_sizes):
-        super().__init__()
-        self.scales = nn.ModuleDict({
-            str(p): VisionTransformerInput(image_size, p, in_channels, embed_size)
-            for p in patch_sizes
-        })
-        self.patch_sizes = patch_sizes
-
-    def forward(self, x):
-        # returns dict: {p: (tokens, (n_h, n_w))}
-        return {p: self.scales[str(p)](x) for p in self.patch_sizes}
 
 class ConvDilatedMLP(nn.Module):
     """
@@ -261,13 +187,9 @@ class SelfAttentionEncoderBlock(nn.Module):
     def _mlp_forward(self, x, grid_size):
         return x + self.mlp(self.ln2(x), grid_size)
 
-    @torch.compile
     def forward(self, x, grid_size):
         x = checkpoint(lambda inp: self._mlp_forward(inp, grid_size), x, use_reentrant=True)
         x = checkpoint(self._attn_forward, x, use_reentrant=True)
-
-        # x = self._attn_forward(x)
-        # x = self._mlp_forward(x, grid_size)
         return x
 
 class MultiScaleDecoder(nn.Module):
@@ -321,57 +243,6 @@ class MultiScaleDecoder(nn.Module):
         out = self.fuse_conv(fused)                     # (B, C, 32, 32)
 
         return out
-
-class MultiScaleOutputHead(nn.Module):
-    def __init__(self, in_dim, out_channels, output_size, use_att_gate=True, skip_channels=None):
-        super().__init__()
-        self.use_att_gate = use_att_gate and (skip_channels is not None)
-        if self.use_att_gate:
-            self.att_gate = AttentionGate(F_g=in_dim, F_l=skip_channels)
-
-        self.proj = nn.Sequential(
-            nn.Conv2d(in_dim, in_dim, 3, padding=1),
-            nn.GELU(),
-            nn.Conv2d(in_dim, out_channels, 1)
-        )
-        self.output_size = output_size
-
-    def forward(self, x, skip=None):
-        if self.use_att_gate and skip is not None:
-            gated = self.att_gate(x, skip)
-            x = x * gated
-        x = self.proj(x)
-        x = F.interpolate(x, size=(self.output_size, self.output_size), mode='bilinear', align_corners=False)
-        return x
-
-class AttentionGate(nn.Module):
-    def __init__(self, F_g, F_l, F_int=1):
-        super().__init__()
-        # Gating from decoder (low-res feature)
-        self.W_g = nn.Sequential(
-            nn.Conv2d(F_g, F_int, kernel_size=1, bias=False),
-            nn.BatchNorm2d(F_int)
-        )
-        # Skip from encoder (high-res feature)
-        self.W_x = nn.Sequential(
-            nn.Conv2d(F_l, F_int, kernel_size=1, bias=False),
-            nn.BatchNorm2d(F_int)
-        )
-        # Psi outputs attention mask
-        self.psi = nn.Sequential(
-            nn.Conv2d(F_int, 1, kernel_size=1, bias=True),
-            nn.Sigmoid()
-        )
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, g, x):
-        # g: decoder feature (from projection path)
-        # x: skip feature (original input / encoder feature)
-        g1 = self.W_g(g)
-        x1 = self.W_x(x)
-        psi = self.relu(g1 + x1)
-        psi = self.psi(psi)
-        return x * psi
 
 class SimpleAttention(nn.Module):
     """Simple attention without positional bias for irregular token sequences"""
@@ -553,11 +424,14 @@ def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
     if settings.load_from is not None:
+        print(f"loading from: {settings.load_from}")
         state_dict = torch.load(settings.load_from)
         model.load_state_dict(state_dict, strict=False)
     elif load_from is not None:
+        print(f"loading from: {load_from}")
         state_dict = torch.load(load_from)
         model.load_state_dict(state_dict, strict=False)
+
     if compile_model:
         model = torch.compile(model, dynamic=True)
 

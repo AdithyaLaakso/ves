@@ -53,16 +53,16 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=5,
-    batch_size=8,
-    learning_rate=1e-3,
+    num_epochs=2,
+    batch_size=10,
+    learning_rate=1e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
 
 # track_levels = True
 
-learning_rate_gamma=0.9
+learning_rate_gamma=1.0
 
 num_workers=1
 
@@ -71,13 +71,14 @@ data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 add_to_path = ""
 
-levels = [i for i in range(18, 21)]
+levels = [i for i in range(20, 31)]
 # levels = [0]
 
 display_levels = levels
+# display_levels = [0]
 
 image_size=128
-patch_sizes=(4, 8)
+patch_sizes=(4, 8) # coarse, fine
 #patch_size=4
 in_channels=1
 out_channels=1
@@ -92,10 +93,11 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
-# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/0-6.pth"
-load_from = None
+load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/multitaskkindalooksgood.pth"
+# load_from = None
 
 display_from = save_to
+# display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/18-2.pth"
 
 save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
 
@@ -127,8 +129,8 @@ loss_settings = LossSettings(
     mse_weight=0.0,
     boundary_weight=0.0,
     focal_weight=0.0,
-    class_weight=0.05,
-    class_weight_delta=0.05,
+    class_weight=1.00,
+    class_weight_delta=0.00000,
     focal_alpha=0.2,
     focal_gamma=2.0
 )
