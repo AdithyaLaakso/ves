@@ -42,7 +42,7 @@ class MetaLoss(nn.Module):
         after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], target[0])
         a_c = 0
         if settings.mode == settings.MULTITASK or settings.mode == settings.CLASSIFICATION:
-            cw = settings.loss_settings.class_weight + (epoch * settings.loss_settings.class_weight_delta)
+            cw = settings.loss_settings.class_weight + (self.global_step * settings.loss_settings.class_weight_delta)
             class_loss = self.cross_entropy(pred[1], target[1])
             a_c = class_loss * cw
 
@@ -101,9 +101,11 @@ class BinarySegmentationLoss(nn.Module):
 
         # Compute all losses
         dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
-        boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
-        focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
-        mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
+        # boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
+        # focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
+        # mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
+
+        boundary_val, focal_val, mse_val = (0, 0, 0)
 
         # dice_val = dice_val * dice_val
         # boundary_val = boundary_val * boundary_val * boundary_val
@@ -118,6 +120,7 @@ class BinarySegmentationLoss(nn.Module):
             mse_val
         )
 
+        # return loss, (dice_val, boundary_val, focal_val, mse_val)
         return loss, (dice_val, boundary_val, focal_val, mse_val)
 
 
