@@ -433,7 +433,7 @@ class HybridClassifier(nn.Module):
         fused = torch.cat([token_feat, seg_feat], dim=1)
         return self.fc(fused)
 
-def build_model(compile_model=False, load_from=None, device=settings.device):
+def build_model(compile_model=True, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
     if settings.load_from is not None:

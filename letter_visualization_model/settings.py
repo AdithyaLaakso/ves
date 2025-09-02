@@ -13,14 +13,11 @@ mp.set_start_method('spawn', force=True)
 torch.autograd.set_detect_anomaly(False)
 torch.backends.cudnn.benchmark = True
 
-torch.backends.fp32_precision = "tf32"
-torch.backends.cuda.matmul.fp32_precision = "tf32"
-torch.backends.cudnn.fp32_precision = "tf32"
-torch.backends.cudnn.conv.fp32_precision = "tf32"
-torch.backends.cudnn.rnn.fp32_precision = "tf32"
-#
-# torch.backends.cuda.matmul.allow_tf32 = True
-# torch.backends.cudnn.allow_tf32 = True
+# torch.backends.fp32_precision = "tf32"
+# torch.backends.cuda.matmul.fp32_precision = "tf32"
+# torch.backends.cudnn.fp32_precision = "tf32"
+# torch.backends.cudnn.conv.fp32_precision = "tf32"
+# torch.backends.cudnn.rnn.fp32_precision = "tf32"
 
 dynamo.config.recompile_limit = 8
 dynamo.config.accumulated_recompile_limit = 8
@@ -29,7 +26,6 @@ torch._dynamo.config.capture_scalar_outputs = True
 torch._dynamo.config.suppress_errors = False
 torch._dynamo.config.disable = True
 torch._dynamo.config.verbose = True
-
 torch.cuda.empty_cache()
 
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,24 +44,24 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=5,
+    num_epochs=1,
     batch_size=32,
     learning_rate=5e-3,
-    train_percent=0.80,
+    train_percent=1.00,
     optimizer_class=torch.optim.AdamW,
 )
 
 # track_levels = True
-learning_rate_gamma=0.99
+learning_rate_gamma=0.95
 
-num_workers=1
+num_workers=0
 
 data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
-levels = [[i for i in range(20, 31)]]
+levels = [i for i in range(1, 23)]
 
 display_levels = levels
 # display_levels = [i for i in range ()]
@@ -89,7 +85,7 @@ save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
 load_from = None
 
 # display_from = save_to
-display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/9-2.pth"
+display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/12-1.pth"
 
 save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
 

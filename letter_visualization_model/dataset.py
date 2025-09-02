@@ -147,7 +147,7 @@ def create_loader(dataset, batch_size=32, shuffle=True, device=settings.device, 
         num_workers=num_workers,
         collate_fn=partial(collate_fn, device=device),
         pin_memory=False,
-        persistent_workers=True
+        persistent_workers=False
     )
 
     return loader
