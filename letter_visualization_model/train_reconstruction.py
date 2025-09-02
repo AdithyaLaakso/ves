@@ -14,40 +14,29 @@ from loss import MetaLoss
 from torch.amp.grad_scaler import GradScaler
 
 #don't cook my vram and require a reboot if I SIGINT
-
 def signal_handler(sig, frame):
+    print(f"Caught {sig} {frame}")
     print('Cleaning up...')
     torch.cuda.empty_cache()
     sys.exit(0)
-
 signal.signal(signal.SIGINT, signal_handler)
 
 def train_epoch(model, loader, optimizer, criterion, scaler, epoch=0):
-    total_loss = torch.zeros(1, device=device)
-    n_batches = 0
-
     model.train()
 
     for inputs, targets in loader:
         torch.cuda.empty_cache()
         optimizer.zero_grad()
         outputs = model(inputs)
-        # loss = criterion(inputs, outputs, targets)
         loss = criterion(outputs, targets, epoch=epoch)
 
-        # print(loss)
         scaler.scale(loss).backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
+        del loss
 
-        total_loss += loss
-        n_batches += 1
-        # if step % settings.print_every_batches == 0:
-        #     path = f"{settings.save_to_dir}/{step // settings.print_every_batches}.pth"
-        #     torch.save(model.state_dict(), path)
-
-    return total_loss / max(n_batches, 1)
+    return
 
 def evaluate_epoch(model, loader, criterion, epoch=0):
     total_loss = torch.zeros(1, device=device)
@@ -63,7 +52,7 @@ def evaluate_epoch(model, loader, criterion, epoch=0):
             total_loss += loss
             n_batches += 1
 
-    return total_loss / max(n_batches, 1)
+    return
 
 
 def train_model():
@@ -129,7 +118,7 @@ def train_model():
         for epoch in range(settings.segmentation_hyperparams.num_epochs):
             print(f"On step {schedule_step}")
             schedule_step += 1
-            train_loss = compiled_train_epoch(
+            compiled_train_epoch(
                 model,
                 train_loader,
                 optimizer,
@@ -138,16 +127,7 @@ def train_model():
                 epoch=epoch
             )
 
-            test_loss = compiled_evaluate_epoch(
-                model,
-                test_loader,
-                criterion,
-                epoch=epoch
-            )
-
-            print(f"Epoch {epoch+1}/{settings.segmentation_hyperparams.num_epochs} | "
-                  f"Train Loss: {train_loss/len(train_loader)} | "
-                  f"Test Loss: {test_loss/len(test_loader)}")
+            print(f"Epoch {epoch+1}/{settings.segmentation_hyperparams.num_epochs} | ")
 
             scheduler.step()
 
@@ -161,6 +141,8 @@ def train_model():
 
                 torch.save(model.state_dict(), path)
                 print(f"Saved model for level {level} -> {path}")
+
+        optimizer = settings.segmentation_hyperparams.optimizer_class(model.parameters())
 
     return model
 

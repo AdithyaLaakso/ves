@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torch.utils.tensorboard import SummaryWriter
-
 import settings
 
 epsilon = 1e-6
