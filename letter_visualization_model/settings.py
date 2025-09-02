@@ -44,7 +44,7 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=1,
+    num_epochs=5,
     batch_size=32,
     learning_rate=5e-3,
     train_percent=1.00,
@@ -52,7 +52,7 @@ segmentation_hyperparams = SegmentationHyperparams(
 )
 
 # track_levels = True
-learning_rate_gamma=0.95
+learning_rate_gamma=0.97
 
 num_workers=0
 
@@ -61,7 +61,7 @@ add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
-levels = [i for i in range(1, 23)]
+levels = [i for i in range(3, 26)]
 
 display_levels = levels
 # display_levels = [i for i in range ()]
