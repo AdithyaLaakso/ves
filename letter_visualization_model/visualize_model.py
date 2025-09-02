@@ -100,14 +100,6 @@ if settings.track_levels:
         plt.tight_layout()
         plt.show()
 
-        # Debugging info
-        print(f"Letter: {letter}")
-        print(f"Input shape: {input_tensor.shape}")
-        print(f"Output shape: {output.shape}")
-        print(f"Input range: [{input_tensor.min():.4f}, {input_tensor.max():.4f}]")
-        print(f"Output range: [{output.min():.4f}, {output.max():.4f}]")
-        print("-" * 50)
-
 else:
     for noisy_path, clean_path, letter in paths:
         # Load and preprocess images
@@ -124,7 +116,7 @@ else:
 
         # Model inference
         with torch.no_grad():
-            output = model(input_tensor)
+            output, _ = model(input_tensor)
 
         output = output.squeeze(0).squeeze(0).cpu()  # [1, 1, 32, 32] -> [32, 32]
         # output = (output > 0.5).int()
@@ -160,11 +152,3 @@ else:
 
         plt.tight_layout()
         plt.show()
-
-        # Debugging info
-        print(f"Letter: {letter}")
-        print(f"Input shape: {input_tensor.shape}")
-        print(f"Output shape: {output.shape}")
-        print(f"Input range: [{input_tensor.min():.4f}, {input_tensor.max():.4f}]")
-        print(f"Output range: [{output.min():.4f}, {output.max():.4f}]")
-        print("-" * 50)

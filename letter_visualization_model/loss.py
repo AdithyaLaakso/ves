@@ -77,7 +77,7 @@ class MetaLoss(nn.Module):
         self.writer.add_scalar("Loss/MSE", mean_m / self.global_step, self.global_step)
 
         if settings.mode == settings.MULTITASK:
-            self.writer.add_scalar("Loss/Classification(raw)", mean_c / self.global_step, self.global_step)
+            self.writer.add_scalar("Loss/Classification", mean_c / self.global_step, self.global_step)
 
         self.writer.add_scalar("Loss/total", mean_total / self.global_step, self.global_step)
 
@@ -93,19 +93,18 @@ class BinarySegmentationLoss(nn.Module):
         self.mse_loss = StructuralSimilarityIndexMeasure(data_range=1.0).to(settings.device)
         self.d = nn.BCELoss()
 
-
     @torch.compile
     def forward(self, pred_masks, target_masks) -> tuple[float, tuple[float, float, float, float]]:
         target_masks = target_masks.float()
         pred_probs = torch.sigmoid(pred_masks)
 
         # Compute all losses
-        dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
+        # dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
         # boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
         # focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
-        # mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
+        mse_val = 1 - self.mse_loss(pred_probs, target_masks) * self.mse_weight
 
-        boundary_val, focal_val, mse_val = (0, 0, 0)
+        boundary_val, focal_val, dice_val = (0, 0, 0)
 
         # dice_val = dice_val * dice_val
         # boundary_val = boundary_val * boundary_val * boundary_val

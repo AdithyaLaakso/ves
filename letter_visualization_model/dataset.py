@@ -25,7 +25,6 @@ class SegData(Dataset):
         self.dataset = self._load_dataset(level)
 
     def _load_dataset(self, level=0) -> List[List]:
-        print(level)
         with open(self.data_path, "r") as f:
             all_data = json.load(f)["paths"]
 
@@ -105,6 +104,7 @@ class SegData(Dataset):
             return input_tensor, mask_tensor
         elif settings.mode == settings.MULTITASK:
             return input_tensor, (mask_tensor, label)
+
         raise ValueError(f"Unknown mode: {settings.mode}")
 
     def _get_item_classifying(self, idx) -> Tuple[Tensor, int]:

@@ -4,6 +4,7 @@ import sys
 
 import torch
 from torch.utils.data import Subset
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 import settings
 import dataset
@@ -72,7 +73,13 @@ def train_model():
 
     optimizer = settings.segmentation_hyperparams.optimizer_class(model.parameters())
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=settings.learning_rate_gamma)
-
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+    #     optimizer,
+    #     T_0=1,        # first cycle length in epochs
+    #     T_mult=2,      # each cycle doubles in length
+    #     eta_min=5e-5   # minimum LR
+    # )
+    #
     scaler = GradScaler(device)
 
     compiled_train_epoch = torch.compile(train_epoch)
