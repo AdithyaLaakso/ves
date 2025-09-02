@@ -26,28 +26,41 @@ def compute_edge_map(x):
     return edges
 
 class PatchEmbed(nn.Module):
-    def __init__(self, patch_size=8, stride=8, embed_dim=128, in_chans=1):
+    def __init__(self, patch_size=8, embed_dim=128, in_chans=1):
         super().__init__()
         self.patch_size = patch_size
-        self.stride = stride
         self.embed_dim = embed_dim
+        self.in_chans = in_chans
 
-        #todo: try without this
-        self.proj = nn.Conv2d(in_chans, embed_dim,
-                              kernel_size=patch_size, stride=stride)
+        # Each patch (flattened) → embed_dim
+        patch_dim = in_chans * patch_size * patch_size
+        self.proj = nn.Linear(patch_dim, embed_dim)
 
     def forward(self, x):
-        patches = self.proj(x)  # [B, C, H', W']
-        B, C, H, W = patches.shape
-        patches = patches.flatten(2).transpose(1, 2)  # [B, HW, C]
-        return patches, (H, W)
+        B, C, H, W = x.shape
+
+        # unfold into non-overlapping patches
+        patches = nn.functional.unfold(
+            x,
+            kernel_size=self.patch_size,
+            stride=self.patch_size
+        )  # [B, patch_dim, L]
+
+        patches = patches.transpose(1, 2)  # [B, L, patch_dim]
+        patches = self.proj(patches)       # [B, L, embed_dim]
+
+        # spatial resolution after patching
+        H_out = H // self.patch_size
+        W_out = W // self.patch_size
+
+        return patches, (H_out, W_out)
 
 class MultiScalePatchEmbed(nn.Module):
     def __init__(self, embed_dim=128, in_chans=1):
         super().__init__()
         csize, fsize = settings.patch_sizes
-        self.coarse = PatchEmbed(csize, csize, embed_dim, in_chans)
-        self.fine   = PatchEmbed(fsize, fsize, embed_dim, in_chans)
+        self.coarse = PatchEmbed(csize, embed_dim, in_chans)
+        self.fine   = PatchEmbed(fsize, embed_dim, in_chans)
         self.type_embed = nn.Embedding(2, embed_dim)  # 0=coarse, 1=fine
 
     def forward(self, x):
