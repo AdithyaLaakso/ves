@@ -14,12 +14,12 @@ else
   set shortmess=aoO
 endif
 badd +17 train_reconstruction.py
-badd +58 settings.py
-badd +7 loss.py
+badd +107 settings.py
+badd +67 loss.py
 badd +150 dataset.py
 badd +21 visualize_model.py
 badd +48 setup.zsh
-badd +38 model.py
+badd +36 model.py
 badd +1 datasetarchived.py
 badd +1 ~/Documents/noise_source_prog/level_10_noisy_ALPHAform_100.bmp
 badd +113 ~/.local/lib/python3.13/site-packages/torch/utils/data/dataloader.py
@@ -29,9 +29,9 @@ badd +2 constants.py
 argglobal
 %argdel
 $argadd train_reconstruction.py
-edit settings.py
+edit loss.py
 argglobal
-balt model.py
+balt settings.py
 setlocal foldmethod=manual
 setlocal foldexpr=0
 setlocal foldmarker={{{,}}}
@@ -42,7 +42,7 @@ setlocal foldnestmax=20
 setlocal foldenable
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 1 - ((0 * winheight(0) + 18) / 37)
+let s:l = 1 - ((0 * winheight(0) + 19) / 38)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
@@ -62,7 +62,6 @@ if filereadable(s:sx)
 endif
 let &g:so = s:so_save | let &g:siso = s:siso_save
 set hlsearch
-nohlsearch
 let g:this_session = v:this_session
 let g:this_obsession = v:this_session
 doautoall SessionLoadPost

@@ -104,7 +104,7 @@ meta_s = 1.0
 
 loss_settings = LossSettings(
     dice_weight=0.0,
-    mse_weight=1.0,
+    mse_weight=3.0,
     boundary_weight=0.0,
     focal_weight=0.0,
     class_weight=1.00,
