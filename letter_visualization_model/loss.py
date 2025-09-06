@@ -98,12 +98,12 @@ class BinarySegmentationLoss(nn.Module):
         pred_probs = torch.sigmoid(pred_masks)
 
         # Compute all losses
-        # dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
         # boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
         # focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
+        boundary_val, focal_val, dice_val = (0, 0, 0)
+        dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
         mse_val = (1 - self.mse_loss(pred_probs, target_masks)) * self.mse_weight
 
-        boundary_val, focal_val, dice_val = (0, 0, 0)
 
         # dice_val = dice_val * dice_val
         # boundary_val = boundary_val * boundary_val * boundary_val

@@ -44,15 +44,15 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=5,
-    batch_size=32,
-    learning_rate=5e-3,
+    num_epochs=30,
+    batch_size=8,
+    learning_rate=1e-3,
     train_percent=1.00,
     optimizer_class=torch.optim.AdamW,
 )
 
 # track_levels = True
-learning_rate_gamma=0.97
+learning_rate_gamma=0.00
 
 num_workers=0
 
@@ -61,31 +61,33 @@ add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
-levels = [i for i in range(3, 26)]
+levels = [20]
 
-display_levels = levels
+display_levels = [20]
 # display_levels = [i for i in range ()]
 
 image_size=128
-patch_sizes=(16, 8) # coarse, fine
+patch_sizes=(16, 4) # coarse, fine
 #patch_size=4
 in_channels=1
 out_channels=1
 embed_size=300
-num_blocks=50
-num_heads=12
+num_blocks=30
+num_heads=10
 dropout=0.2
 output_size=32
 use_gradient=True
+num_classes=24
 
 print_every_batches = 1
 
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
 load_from = None
 
 # display_from = save_to
-display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/12-1.pth"
+display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/20-2.pth"
 
 save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
 
@@ -103,8 +105,8 @@ meta_m_weight = 0.0
 meta_s = 1.0
 
 loss_settings = LossSettings(
-    dice_weight=0.0,
-    mse_weight=3.0,
+    dice_weight=0.5,
+    mse_weight=1.0,
     boundary_weight=0.0,
     focal_weight=0.0,
     class_weight=1.00,

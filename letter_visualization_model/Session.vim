@@ -13,25 +13,25 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
-badd +17 train_reconstruction.py
-badd +107 settings.py
-badd +67 loss.py
+badd +72 train_reconstruction.py
+badd +89 settings.py
+badd +104 loss.py
 badd +150 dataset.py
 badd +21 visualize_model.py
 badd +48 setup.zsh
-badd +36 model.py
+badd +40 model.py
 badd +1 datasetarchived.py
 badd +1 ~/Documents/noise_source_prog/level_10_noisy_ALPHAform_100.bmp
 badd +113 ~/.local/lib/python3.13/site-packages/torch/utils/data/dataloader.py
 badd +279 /usr/lib/python3.13/functools.py
 badd +1 ~/Documents/synthetic_ct_images/paths.json
-badd +2 constants.py
+badd +3 constants.py
 argglobal
 %argdel
 $argadd train_reconstruction.py
-edit loss.py
+edit settings.py
 argglobal
-balt settings.py
+balt model.py
 setlocal foldmethod=manual
 setlocal foldexpr=0
 setlocal foldmarker={{{,}}}
@@ -42,12 +42,12 @@ setlocal foldnestmax=20
 setlocal foldenable
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 1 - ((0 * winheight(0) + 19) / 38)
+let s:l = 89 - ((18 * winheight(0) + 18) / 37)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 1
-normal! 0
+keepjumps 89
+normal! 084|
 lcd ~/Documents/ves/letter_visualization_model
 tabnext 1
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0 && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'
