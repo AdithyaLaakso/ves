@@ -34,7 +34,11 @@ class PatchEmbed(nn.Module):
 
         # Each patch (flattened) → embed_dim
         patch_dim = in_chans * patch_size * patch_size
-        self.proj = nn.Linear(patch_dim, embed_dim)
+        self.proj = nn.Sequential(
+            # nn.LayerNorm(patch_dim),
+            nn.Linear(patch_dim, embed_dim),
+            # nn.ReLU(),
+        )
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -311,7 +315,7 @@ class SimpleEncoderBlock(nn.Module):
         return x
 
 class VisionTransformerForSegmentationMultiScale(nn.Module):
-    def __init__(self, use_gradient_checkpointing=settings.use_gradient, num_classes=25):
+    def __init__(self, use_gradient_checkpointing=settings.use_gradient, num_classes=settings.num_classes):
         super().__init__()
         # read settings with sensible fallbacks
         self.output_size = settings.output_size
@@ -353,7 +357,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Classification head (hybrid: tokens + segmentation map)
         if settings.mode == settings.MULTITASK:
-            self.classifier = HybridClassifier(embed_dim=self.embed_size, num_classes=num_classes)
+            self.classifier = HybridClassifier(num_classes=num_classes)
 
     def forward(self, x):
         B = x.size(0)
@@ -384,7 +388,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
         out = F.interpolate(out, size=(32, 32), mode="bilinear")
 
         if settings.mode == settings.MULTITASK:
-            label = self.classifier(processed_tokens, out)  # <-- pass both
+            label = self.classifier(out)
             return out, label
         elif settings.mode == settings.RECONSTRUCTION:
             return out
@@ -395,14 +399,8 @@ class HybridClassifier(nn.Module):
     """
     Combines global token features + segmentation map features for classification
     """
-    def __init__(self, embed_dim=128, num_classes=25):
+    def __init__(self, num_classes=settings.num_classes):
         super().__init__()
-        # Token branch
-        self.token_fc = nn.Sequential(
-            nn.Linear(embed_dim, 256),
-            nn.ReLU(),
-        )
-
         # Segmentation map branch
         self.seg_conv = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, padding=1),
@@ -415,23 +413,17 @@ class HybridClassifier(nn.Module):
 
         # Fusion + output
         self.fc = nn.Sequential(
-            nn.Linear(256 + 32 * 4 * 4, 256),
+            nn.Linear(32 * 4 * 4, 256),
             nn.ReLU(),
             nn.Linear(256, num_classes)
         )
 
-    def forward(self, tokens, seg_map):
-        # Token branch (mean-pool over tokens)
-        pooled = tokens.mean(dim=1)           # (B, embed_dim)
-        token_feat = self.token_fc(pooled)    # (B, 256)
-
+    def forward(self, seg_map):
         # Segmentation branch
         seg_feat = self.seg_conv(seg_map)     # (B, 32, 4, 4)
         seg_feat = seg_feat.flatten(1)        # (B, 512)
 
-        # Fuse
-        fused = torch.cat([token_feat, seg_feat], dim=1)
-        return self.fc(fused)
+        return self.fc(seg_feat)
 
 def build_model(compile_model=True, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
