@@ -428,13 +428,13 @@ class HybridClassifier(nn.Module):
 def build_model(compile_model=True, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
-    if settings.load_from is not None:
-        print(f"loading from: {settings.load_from}")
-        state_dict = torch.load(settings.load_from)
-        model.load_state_dict(state_dict, strict=False)
-    elif load_from is not None:
+    if load_from is not None:
         print(f"loading from: {load_from}")
         state_dict = torch.load(load_from)
+        model.load_state_dict(state_dict, strict=False)
+    elif settings.load_from is not None:
+        print(f"loading from: {settings.load_from}")
+        state_dict = torch.load(settings.load_from)
         model.load_state_dict(state_dict, strict=False)
 
     if compile_model:

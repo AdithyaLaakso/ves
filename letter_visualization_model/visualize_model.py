@@ -1,6 +1,8 @@
+import sys
 import json
 import random
 import torch
+from os import path as Path
 from torchvision import transforms
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -28,7 +30,13 @@ paths = random.sample(vals, limit)
 
 # Initialize model
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = build_model(load_from=settings.display_from)
+
+if len(sys.argv) > 1:
+    load_from = Path.abspath(sys.argv[1])
+else:
+    load_from = settings.display_from
+
+model = build_model(load_from=load_from)
 
 # Preprocessing: Resize to 128x128 and ensure tensor format
 preprocess = transforms.Compose([

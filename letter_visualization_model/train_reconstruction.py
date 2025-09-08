@@ -118,6 +118,7 @@ def train_model():
         for epoch in range(settings.segmentation_hyperparams.num_epochs):
             print(f"On step {schedule_step}")
             schedule_step += 1
+            print(torch.cuda.memory_allocated()/1e9, 'GB allocated')
             compiled_train_epoch(
                 model,
                 train_loader,
@@ -143,6 +144,7 @@ def train_model():
                 print(f"Saved model for level {level} -> {path}")
 
         optimizer = settings.segmentation_hyperparams.optimizer_class(model.parameters())
+        torch.cuda.empty_cache()
 
     return model
 
