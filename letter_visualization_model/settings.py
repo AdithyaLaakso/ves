@@ -1,3 +1,4 @@
+import faulthandler
 import torch
 import torch._dynamo as dynamo
 import torch.multiprocessing as mp
@@ -27,6 +28,7 @@ torch._dynamo.config.suppress_errors = False
 torch._dynamo.config.disable = True
 torch._dynamo.config.verbose = True
 torch.cuda.empty_cache()
+faulthandler.enable()
 
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_size = None
@@ -44,8 +46,8 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=30,
-    batch_size=8,
+    num_epochs=10,
+    batch_size=32,
     learning_rate=1e-3,
     train_percent=1.00,
     optimizer_class=torch.optim.AdamW,
@@ -61,13 +63,13 @@ add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
-levels = [20]
+levels = [10]
 
-display_levels = [20]
+display_levels = [5]
 # display_levels = [i for i in range ()]
 
 image_size=128
-patch_sizes=(16, 4) # coarse, fine
+patch_sizes=(16, 8) # coarse, fine
 #patch_size=4
 in_channels=1
 out_channels=1
@@ -87,7 +89,7 @@ save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
 load_from = None
 
 # display_from = save_to
-display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/20-2.pth"
+display_from = save_to
 
 save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
 
@@ -105,9 +107,9 @@ meta_m_weight = 0.0
 meta_s = 1.0
 
 loss_settings = LossSettings(
-    dice_weight=0.5,
-    mse_weight=1.0,
-    boundary_weight=0.0,
+    dice_weight=0.0,
+    mse_weight=3.0,
+    boundary_weight=1.0,
     focal_weight=0.0,
     class_weight=1.00,
     class_weight_delta=0.00000,

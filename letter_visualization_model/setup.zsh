@@ -30,6 +30,7 @@ export TORCH_TRACE=./logs.txt
 # export TORCH_LOGS=
 export TORCHDYNAMO_VERBOSE=1
 # export TORCH_COMPILE_DEBUG=
+export PYTHONFAULTHANDLER=1
 
 mkdir -p checkpoints/
 rm -f checkpoints/* &> /dev/null || true
