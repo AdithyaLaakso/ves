@@ -7,6 +7,9 @@ import constants
 from collections import namedtuple
 import os
 import glob
+import logging
+
+logging.getLogger("torch._dynamo").setLevel(logging.DEBUG)
 
 mp.set_start_method('spawn', force=True)
 
@@ -19,11 +22,11 @@ torch.backends.cudnn.benchmark = True
 # torch.backends.cudnn.conv.fp32_precision = "tf32"
 # torch.backends.cudnn.rnn.fp32_precision = "tf32"
 #
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
 
-dynamo.config.recompile_limit = 8
-dynamo.config.accumulated_recompile_limit = 8
+dynamo.config.recompile_limit = 100
+dynamo.config.accumulated_recompile_limit = 100
 torch._dynamo.config.allow_unspec_int_on_nn_module = True
 torch._dynamo.config.capture_scalar_outputs = True
 torch._dynamo.config.suppress_errors = False
@@ -53,39 +56,41 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=2,
-    batch_size=10,
-    learning_rate=1e-4,
+    num_epochs=100,
+    batch_size=256,
+    learning_rate=5e-3,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
 
 # track_levels = True
 
-learning_rate_gamma=1.0
+learning_rate_gamma=1.001
 
-num_workers=1
+num_workers=0
+persistent_workers=False
 
 data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
+add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
-add_to_path = ""
 
-levels = [i for i in range(20, 31)]
+levels = [[i for i in range (0, 31)]]
 # levels = [0]
 
-display_levels = levels
+display_levels = levels[0]
 # display_levels = [0]
 
 image_size=128
-patch_sizes=(4, 8) # coarse, fine
+patch_sizes=(8, 32) # coarse, fine
 #patch_size=4
 in_channels=1
 out_channels=1
 embed_size=300
-num_blocks=50
-num_heads=12
+num_blocks=10
+num_heads=10
 dropout=0.2
+input_size=128
 output_size=32
 use_gradient=True
 
@@ -93,7 +98,8 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
-load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/multitaskkindalooksgood.pth"
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/multitaskkindalooksgood.pth"
+load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
 # load_from = None
 
 display_from = save_to
@@ -114,22 +120,12 @@ meta_c_weight = 1.0
 meta_m_weight = 0.0
 meta_s = 1.0
 
-# meta_op_scale = meta_add_weight + meta_div_weight
-# meta_add_weight /= meta_op_scale
-# meta_div_weight /= meta_op_scale
-
-# meta_multiloss_scale = meta_f_weight + meta_b_weight + meta_d_weight + meta_m_weight
-# meta_f_weight /= meta_multiloss_scale
-# meta_b_weight /= meta_multiloss_scale
-# meta_m_weight /= meta_multiloss_scale
-# meta_d_weight /= meta_multiloss_scale
-
 loss_settings = LossSettings(
-    dice_weight=1.0,
-    mse_weight=0.0,
-    boundary_weight=0.0,
-    focal_weight=0.0,
-    class_weight=1.00,
+    dice_weight=0.0,
+    mse_weight=1.0,
+    boundary_weight=1.0,
+    focal_weight=1.0,
+    class_weight=2.00,
     class_weight_delta=0.00000,
     focal_alpha=0.2,
     focal_gamma=2.0
@@ -140,7 +136,6 @@ print(segmentation_hyperparams)
 
 letters = constants.greek_letters.keys()
 letter_to_idx = constants.greek_letters
-# letters = ["ALPHA"]
 
 RECONSTRUCTION = 0
 

@@ -12,8 +12,11 @@ from model import build_model
 from loss import MetaLoss
 from torch.amp.grad_scaler import GradScaler
 
-#don't cook my vram and require a reboot if I SIGINT
+import faulthandler
+faulthandler.enable()
+faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
+#don't cook my vram and require a reboot if I SIGINT
 def signal_handler(sig, frame):
     print('Cleaning up...')
     torch.cuda.empty_cache()
