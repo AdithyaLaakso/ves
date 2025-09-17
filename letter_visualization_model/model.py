@@ -371,18 +371,16 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
         out = F.interpolate(out, size=(32, 32), mode="bilinear")
 
         if settings.mode == settings.MULTITASK:
-            label = self.classifier(processed_tokens, out)  # <-- pass both
+            label = self.classifier(processed_tokens, out, x)  # <-- pass both
             return out, label
         elif settings.mode == settings.RECONSTRUCTION:
             return out
         else:
             raise ValueError(f"Unknown mode: {settings.mode}")
 
+
 class HybridClassifier(nn.Module):
-    """
-    Combines global token features + segmentation map features for classification
-    """
-    def __init__(self, embed_dim=128, num_classes=25):
+    def __init__(self, embed_dim=128, num_classes=24):
         super().__init__()
         # Token branch
         self.token_fc = nn.Sequential(
@@ -400,14 +398,30 @@ class HybridClassifier(nn.Module):
             nn.AdaptiveAvgPool2d((4, 4))  # -> (32, 4, 4)
         )
 
-        # Fusion + output
+        # Original image branch (grayscale 128x128 input)
+        self.image_conv = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4))  # -> (128, 4, 4)
+        )
+
+        # Fusion + output (updated dimensions)
         self.fc = nn.Sequential(
-            nn.Linear(256 + 32 * 4 * 4, 256),
+            nn.Linear(256 + 32 * 4 * 4 + 128 * 4 * 4, 512),  # 256 + 512 + 2048 = 2816
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
             nn.ReLU(),
             nn.Linear(256, num_classes)
         )
 
-    def forward(self, tokens, seg_map):
+    def forward(self, tokens, seg_map, image):
         # Token branch (mean-pool over tokens)
         pooled = tokens.mean(dim=1)           # (B, embed_dim)
         token_feat = self.token_fc(pooled)    # (B, 256)
@@ -416,20 +430,24 @@ class HybridClassifier(nn.Module):
         seg_feat = self.seg_conv(seg_map)     # (B, 32, 4, 4)
         seg_feat = seg_feat.flatten(1)        # (B, 512)
 
-        # Fuse
-        fused = torch.cat([token_feat, seg_feat], dim=1)
+        # Original image branch
+        img_feat = self.image_conv(image)     # (B, 128, 4, 4)
+        img_feat = img_feat.flatten(1)        # (B, 2048)
+
+        # Fuse all three branches
+        fused = torch.cat([token_feat, seg_feat, img_feat], dim=1)  # (B, 2816)
         return self.fc(fused)
 
 def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
-    if settings.load_from is not None:
-        print(f"loading from: {settings.load_from}")
-        state_dict = torch.load(settings.load_from)
-        model.load_state_dict(state_dict, strict=False)
-    elif load_from is not None:
+    if load_from is not None:
         print(f"loading from: {load_from}")
         state_dict = torch.load(load_from)
+        model.load_state_dict(state_dict, strict=False)
+    elif settings.load_from is not None:
+        print(f"loading from: {settings.load_from}")
+        state_dict = torch.load(settings.load_from)
         model.load_state_dict(state_dict, strict=False)
 
     if compile_model:
