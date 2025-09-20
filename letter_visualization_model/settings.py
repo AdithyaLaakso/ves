@@ -5,6 +5,7 @@ import torch.multiprocessing as mp
 import constants
 
 from collections import namedtuple
+import sys
 import os
 import glob
 import logging
@@ -39,6 +40,8 @@ os.environ["TORCHDYNAMO_VERBOSE"] = "1"
 
 torch.cuda.empty_cache()
 #dynamo.disable()
+
+base_path = "/home/Adithya/Documents/ves/letter_visualization_model/"
 
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_size = None
@@ -75,10 +78,10 @@ add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
-levels = [[i for i in range (0, 31)]]
-# levels = [0]
+levels = [[i for i in range(0,25)]]
+# levels = [[i]]
 
-display_levels = levels[0]
+display_levels = [[i for i in range(0,30)]]
 # display_levels = [0]
 
 image_size=128
@@ -98,19 +101,23 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
-# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/multitaskkindalooksgood.pth"
-load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
-# load_from = None
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/thismodelisverygood.pth"
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
+load_from = None
 
 display_from = save_to
 # display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/18-2.pth"
 
-save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
-
-# log_dir = None
 stamp_files = glob.glob("*.stamp")
-log_dir = "./logs/" + os.path.splitext(stamp_files[0])[0] if len(stamp_files) == 1 else None
+stamp_path = os.path.splitext(stamp_files[0])[0] if len(stamp_files) == 1 else None
+if not stamp_path:
+    print("bruh no stamp_path")
+    sys.exit()
+
+stamp_path = stamp_path[0]
+log_dir = "./logs/" + stamp_path
 print (f"logging to: {log_dir}")
+save_to_dir = "./checkpoints/" + stamp_path
 
 meta_div_weight = 0.0
 meta_f_weight = 1.0
@@ -123,7 +130,7 @@ meta_s = 1.0
 loss_settings = LossSettings(
     dice_weight=0.0,
     mse_weight=1.0,
-    boundary_weight=1.0,
+    boundary_weight=0.2,
     focal_weight=1.0,
     class_weight=2.00,
     class_weight_delta=0.00000,
