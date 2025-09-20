@@ -1,5 +1,12 @@
 #!/bin/zsh
 
+if ! git diff --quiet || ! git diff --cached --quiet; then
+	echo "⚠️ Script can only run on a commited state. It is frustrating but think of all the progress you have lost..."
+  exit 1
+fi
+
+commit_hash=$(git rev-parse --short HEAD)
+
 sudo nvidia-smi -caa
 # ----------------------------
 # CPU / OpenMP / MKL settings
@@ -30,18 +37,17 @@ export TORCH_TRACE=./logs.txt
 export TORCHDYNAMO_VERBOSE=1
 # export TORCH_COMPILE_DEBUG=
 
-mkdir -p checkpoints/
-rm -f checkpoints/* &> /dev/null || true
+mkdir -p checkpoints/ checkpoints_archive/
+mv -f checkpoints/* checkpoints_archive/*
+rm -rf checkpoints/*
 
 mkdir -p logs_archive/
 mv -f logs/* logs_archive/
 rm *.stamp
 
-stamp=$(date +%s)
-file_name=$stamp".stamp"
+file_name=$commit_hash".stamp"
 touch $file_name
 killall tensorboard
-nohup tensorboard --logdir ./logs/$stamp &
-
+nohup tensorboard --logdir ./logs/$commit_hash &
 
 python3 train_reconstruction.py && python3 visualize_model.py
