@@ -59,9 +59,9 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=10,
+    num_epochs=20,
     batch_size=128,
-    learning_rate=9e-4,
+    learning_rate=1e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
@@ -78,10 +78,10 @@ add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
-levels = [[i for i in range(5,15)]]
+levels = [[i for i in range(10,25)]]
 # levels = [0]
 
-display_levels = levels[0]
+display_levels = [14]
 # display_levels = [i for i in range(20, 31)]
 
 image_size=128
