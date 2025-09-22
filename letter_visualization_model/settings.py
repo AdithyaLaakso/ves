@@ -60,7 +60,7 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 
 segmentation_hyperparams = SegmentationHyperparams(
     num_epochs=20,
-    batch_size=128,
+    batch_size=200,
     learning_rate=2e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
