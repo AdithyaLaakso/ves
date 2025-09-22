@@ -78,11 +78,11 @@ add_to_path = ""
 # data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 # add_to_path = "/home/Adithya/Documents/"
 
-levels = [[i for i in range(1,10)]]
+levels = [[i for i in range(5,15)]]
 # levels = [0]
 
-display_levels = levels
-# display_levels = [0]
+display_levels = levels[0]
+# display_levels = [i for i in range(20, 31)]
 
 image_size=128
 patch_sizes=(8, 32) # coarse, fine
