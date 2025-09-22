@@ -81,7 +81,7 @@ add_to_path = ""
 levels = [[i for i in range(10,25)]]
 # levels = [0]
 
-display_levels = [14]
+display_levels = levels[0]
 # display_levels = [i for i in range(20, 31)]
 
 image_size=128
