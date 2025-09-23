@@ -59,8 +59,8 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=20,
-    batch_size=200,
+    num_epochs=1,
+    batch_size=128,
     learning_rate=2e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
@@ -82,7 +82,7 @@ levels = [[i for i in range(10,25)]]
 # levels = [0]
 
 # display_levels = levels[0]
-display_levels = [24]
+display_levels = [20]
 
 image_size=128
 patch_sizes=(8, 32) # coarse, fine
