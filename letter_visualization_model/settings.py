@@ -59,7 +59,7 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=5,
+    num_epochs=50,
     batch_size=64,
     learning_rate=1e-5,
     train_percent=0.80,
