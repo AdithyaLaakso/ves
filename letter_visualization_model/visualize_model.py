@@ -57,6 +57,8 @@ if settings.track_levels:
             continue
         shown_letters.add(letter)
 
+        noisy_path = settings.add_to_path + noisy_path
+        clean_path = settings.add_to_path + clean_path
         # Load and preprocess images
         noisy_img = Image.open(noisy_path).convert("RGB")
         clean_img = Image.open(clean_path).convert("RGB")
