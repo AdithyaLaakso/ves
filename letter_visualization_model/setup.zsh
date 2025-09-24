@@ -7,9 +7,10 @@ sudo nvidia-smi -caa
 export OMP_NUM_THREADS=2                 # Match to number of physical cores (adjust to your CPU)
 export OMP_SCHEDULE=STATIC                # Static scheduling for uniform workloads
 export OMP_PROC_BIND=CLOSE                # Bind threads close to master for cache locality
-export GOMP_CPU_AFFINITY="0-19"          # Pin threads to cores 0-19
+export GOMP_CPU_AFFINITY="0-2"          # Pin threads to cores 0-19
 export KMP_AFFINITY=granularity=fine,compact,1,0  # Fine granularity, compact placement
 export KMP_BLOCKTIME=0                    # Threads sleep immediately when idle (better for GPU-heavy loops)
+export CUDA_LAUNCH_BLOCKING=1
 
 # ----------------------------
 # PyTorch / CUDA settings
@@ -29,6 +30,7 @@ export TORCH_TRACE=./logs.txt
 # export TORCH_LOGS=
 export TORCHDYNAMO_VERBOSE=1
 # export TORCH_COMPILE_DEBUG=
+export PYTHONFAULTHANDLER=1
 
 mkdir -p checkpoints/
 rm -f checkpoints/* &> /dev/null || true

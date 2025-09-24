@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torch.utils.tensorboard import SummaryWriter
-
 import settings
 
 epsilon = 1e-6
@@ -21,7 +20,7 @@ class MetaLoss(nn.Module):
         self.meta_d_weight = settings.meta_d_weight
         self.meta_c_weight = settings.meta_c_weight
 
-        self.writer = SummaryWriter(settings.log_dir) if settings.log_dir is not None else None
+        self.writer = SummaryWriter(settings.log_dir)
 
         # tracking moved outside forward (not compiled)
         self._running_stats = {
@@ -38,35 +37,20 @@ class MetaLoss(nn.Module):
         self.global_step = 1
 
     @torch.compile
-    def operation(self, a, b):
-        # div = (a / torch.sqrt(b + epsilon)) * self.meta_div_weight
-        # return (div) / (self.meta_add_weight + self.meta_div_weight) + self.meta_s * a
-        return a
-
-    @torch.compile
-    def forward(self, input, pred, target):
-        # before, (b_d, b_b, b_f, b_m) = self.BSL(input, target)
+    def forward(self, pred, target, epoch=0):
         after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], target[0])
-        if settings.mode == settings.MULTITASK:
-            a_c = self.cross_entropy(pred[1], target[1])
-        # f_d = self.operation(a_d, b_d / self.meta_d_weight)
-        # f_b = self.operation(a_b, b_b / self.meta_b_weight)
-        # f_f = self.operation(a_f, b_f / self.meta_f_weight)
-        #f_m = self.operation(a_m, b_m / self.meta_m_weight)
-        # final = (f_d + f_b + f_f + f_m)
-        # final = (f_d + f_b + f_f)
-        # final = (f_d + f_b + f_f)
+        a_c = 0
+        if settings.mode == settings.MULTITASK or settings.mode == settings.CLASSIFICATION:
+            cw = settings.loss_settings.class_weight + (self.global_step * settings.loss_settings.class_weight_delta)
+            class_loss = self.cross_entropy(pred[1], target[1])
+            a_c = class_loss * cw
 
-        # self.update_running_stats(f_d, f_b, f_f, 0)
-        if settings.mode == settings.MULTITASK:
-            self.update_running_stats(a_d, a_b, a_f, a_m, a_c)
-        else:
-            self.update_running_stats(a_d, a_b, a_f, a_m)
+        self.update_running_stats(a_d, a_b, a_f, a_m, a_c)
         self.global_step = self.global_step + 1
 
-        return after
+        return after + a_c
 
-    def update_running_stats(self, dice_val, boundary_val, focal_val, mse_val, classification_val=None):
+    def update_running_stats(self, dice_val, boundary_val, focal_val, mse_val, classification_val=0):
         self._running_stats["dice"] += dice_val
         self._running_stats["boundary"] += boundary_val
         self._running_stats["focal"] += focal_val
@@ -74,23 +58,26 @@ class MetaLoss(nn.Module):
         if settings.mode == settings.MULTITASK:
             self._running_stats["classification"] += classification_val
 
-        # self._counter += 1
-        # if self._counter >= self.print_every_batches:
         mean_d = self._running_stats["dice"]
         mean_b = self._running_stats["boundary"]
         mean_f = self._running_stats["focal"]
         mean_m = self._running_stats["mse"]
         mean_total = mean_d + mean_b + mean_m + mean_f
-        if settings.mode == settings.MULTITASK:
+
+        mean_c = 0
+        if settings.mode == settings.MULTITASK or settings.mode==settings.CLASSIFICATION:
             mean_c = self._running_stats["classification"]
             mean_total += mean_c
+
         # if self.writer is not None and global_step is not None:
         self.writer.add_scalar("Loss/Dice", mean_d / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/Boundary", mean_b / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/Focal", mean_f / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/MSE", mean_m / self.global_step, self.global_step)
+
         if settings.mode == settings.MULTITASK:
             self.writer.add_scalar("Loss/Classification", mean_c / self.global_step, self.global_step)
+
         self.writer.add_scalar("Loss/total", mean_total / self.global_step, self.global_step)
 
 class BinarySegmentationLoss(nn.Module):
@@ -105,22 +92,23 @@ class BinarySegmentationLoss(nn.Module):
         self.mse_loss = StructuralSimilarityIndexMeasure(data_range=1.0).to(settings.device)
         self.d = nn.BCELoss()
 
-
     @torch.compile
     def forward(self, pred_masks, target_masks) -> tuple[float, tuple[float, float, float, float]]:
         target_masks = target_masks.float()
         pred_probs = torch.sigmoid(pred_masks)
 
         # Compute all losses
-        dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
         boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
-        mse_val = self.mse_loss(pred_probs, target_masks) * self.mse_weight
+        # boundary_val, focal_val, dice_val = (0, 0, 0)
+        dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
+        mse_val = (1 - self.mse_loss(pred_probs, target_masks)) * self.mse_weight
 
-        dice_val = dice_val * dice_val
-        boundary_val = boundary_val * boundary_val * boundary_val
-        focal_val = focal_val
-        mse_val = mse_val
+
+        # dice_val = dice_val * dice_val
+        # boundary_val = boundary_val * boundary_val * boundary_val
+        # focal_val = focal_val
+        mse_val = mse_val * mse_val
 
         # Weighted sum
         loss = (
@@ -130,6 +118,7 @@ class BinarySegmentationLoss(nn.Module):
             mse_val
         )
 
+        # return loss, (dice_val, boundary_val, focal_val, mse_val)
         return loss, (dice_val, boundary_val, focal_val, mse_val)
 
 
