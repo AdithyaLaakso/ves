@@ -6,3 +6,10 @@ Here are some samples of what it is capable of:
 
 ![sample1](sample1.png)
 ![sample2](sample2.png)
+
+To train:
+1. Open greek_letters/src/main.py and set the desginered parameters for data generation.
+2. Set the desired paramaters in letter_visualization_model/settings.py
+3. Run letter_visualization_model/setup.zsh
+
+If you have any questions, feel free to leave an issue.
