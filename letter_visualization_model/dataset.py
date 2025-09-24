@@ -25,7 +25,6 @@ class SegData(Dataset):
         self.dataset = self._load_dataset(level)
 
     def _load_dataset(self, level=0) -> List[List]:
-        print(level)
         with open(self.data_path, "r") as f:
             all_data = json.load(f)["paths"]
 
@@ -62,6 +61,7 @@ class SegData(Dataset):
 
         if settings.mode == settings.CLASSIFICATION:
             return self._get_item_classifying(idx)
+
         item = self.dataset[idx]
         label = settings.letter_to_idx[item[2]]
 
@@ -104,6 +104,7 @@ class SegData(Dataset):
             return input_tensor, mask_tensor
         elif settings.mode == settings.MULTITASK:
             return input_tensor, (mask_tensor, label)
+
         raise ValueError(f"Unknown mode: {settings.mode}")
 
     def _get_item_classifying(self, idx) -> Tuple[Tensor, int]:
@@ -122,8 +123,21 @@ class SegData(Dataset):
 def collate_fn(batch, device="cuda"):
     inputs, labels = zip(*batch)
     inputs = torch.stack(inputs).to(device)
-    labels = torch.tensor(labels, dtype=torch.long, device=device)
-    return inputs, labels
+
+    # Classification mode (labels are ints)
+    if isinstance(labels[0], int):
+        labels = torch.tensor(labels, dtype=torch.long, device=device)
+        return inputs, labels
+
+    # Multitask mode (labels are (mask, label))
+    elif isinstance(labels[0], tuple):
+        masks, class_labels = zip(*labels)
+        masks = torch.stack(masks).to(device)
+        class_labels = torch.tensor(class_labels, dtype=torch.long, device=device)
+        return inputs, (masks, class_labels)
+
+    else:
+        raise TypeError(f"Unexpected label type: {type(labels[0])}")
 
 def create_loader(dataset, batch_size=32, shuffle=True, device=settings.device, num_workers=settings.num_workers):
     loader = DataLoader(
@@ -133,7 +147,7 @@ def create_loader(dataset, batch_size=32, shuffle=True, device=settings.device, 
         num_workers=num_workers,
         collate_fn=partial(collate_fn, device=device),
         pin_memory=False,
-        persistent_workers=True
+        persistent_workers=False
     )
 
     return loader
