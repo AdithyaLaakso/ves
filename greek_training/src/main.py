@@ -9,8 +9,8 @@ import shutil
 
 # Download latest version
 path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
-number_of_images_per_letter = 10
-level = 1
+number_of_images_per_letter = 1
+levels = range(1,30, 5)
 print(f"Dataset downloaded to {path}")
 def generate_irregular_blobs(size, smooth_sigma=8, min_area=0, max_area= 1500000):
     """Generate large, sparse, overlapping blobs from random noise."""
@@ -249,98 +249,100 @@ def get_unigue_greek_letters(img_paths):
 img_paths = get_img_path_list(path)
 unique_greek_letters = get_unigue_greek_letters(img_paths)
 
-# List of possible curvature values for cylindrical warping (simulates scroll curvature)
-# Higher values = more curvature, which can make the letter harder to read due to distortion.
-curvatures = np.array([0.001, 0.0012, 0.0014]) * level
-
-# Mean intensity values for papyrus background (controls overall brightness)
-# Lower values = darker background, which can make the letter harder to distinguish if ink is also dark.
-mu_p_values =  np.array([30]) * level
-
-# Standard deviation for papyrus background intensity (controls background noise)
-# Higher values = more background noise, making the letter harder to read.
-sigma_p_values =  np.array([1])* level/5
-
-# Difference in mean intensity between ink and papyrus (controls ink contrast)
-# Higher values = more contrast (easier to read); lower values = less contrast (harder to read).
-delta_mu_values =  np.array([2]) * 5/level
-
-# Standard deviation for ink intensity (controls ink noise)
-# Higher values = noisier ink, which can make the letter harder to read.
-sigma_i_values =  np.array([1, 2]) * level/5
-
-# Standard deviation for CT blur in x/y (simulates CT resolution loss)
-# Higher values = more blur, making the letter harder to read.
-sigma_xy_values =  np.array([0.2]) * level/5
-
-# Standard deviation for Gaussian noise added to CT image (controls graininess)
-# Higher values = more grain/noise, making the letter harder to read.
-gauss_sigma_values =  np.array([.0001]) * level**4
-
-# Scaling factor for Poisson noise (simulates photon noise in CT)
-# Values further from 1.0 = more noise, making the letter harder to read.
-poisson_scale_values =  1 - np.array([.01**(1/level), -.01**(1/level)])
-
-# Strength of ring artifact simulation (CT-specific artifact)
-# Higher values = stronger ring artifacts, making the letter harder to read.
-ring_strength_values =  np.array([0.001, 0.002])
-
-# Density of papyrus fibers (controls how many fibers are generated)
-# Higher values = more fibers, which can obscure the letter and make it harder to read.
-fiber_density_values =  np.array([0.05])
-
-# Strength of papyrus fibers (controls fiber visibility/contrast)
-# Higher values = more visible fibers, which can make the letter harder to read.
-fiber_strength_values =  np.array([0.1]) # Must be odd numbers/10
-
-# Strength of blob artifacts (controls visibility of extraction blobs)
-# Higher values = more prominent blobs, making the letter harder to read.
-blob_strength_values =  np.array([0.5, .65, .8, 1])
-i = 0
-
 paths = []
 output_dir = f"synthetic_ct_images/"
+
 if os.path.exists(output_dir):
     shutil.rmtree(output_dir)
-for letter in unique_greek_letters:
-    letter_img_paths = [path[1] for path in img_paths if path[0] == letter]
-    for _ in range(number_of_images_per_letter):
-        i += 1
-        img_path = np.random.choice(letter_img_paths)
-        assert os.path.exists(img_path)
-        curvature = np.random.choice(curvatures)
-        mu_p = np.random.choice(mu_p_values)
-        sigma_p = np.random.choice(sigma_p_values)
-        delta_mu = np.random.choice(delta_mu_values)
-        sigma_i = np.random.choice(sigma_i_values)
-        sigma_xy = np.random.choice(sigma_xy_values)
-        gauss_sigma = np.random.choice(gauss_sigma_values)
-        poisson_scale = np.random.choice(poisson_scale_values)
-        ring_strength = np.random.choice(ring_strength_values)
-        fiber_density = np.random.choice(fiber_density_values)
-        fiber_strength = np.random.choice(fiber_strength_values)
-        blob_strength = np.random.choice(blob_strength_values)
-        params = {
-            'curvature': curvature,
-            'mu_p': mu_p,
-            'sigma_p': sigma_p,
-            'delta_mu': delta_mu,
-            'sigma_i': sigma_i,
-            'sigma_xy': sigma_xy,
-            'gauss_sigma': gauss_sigma,
-            'poisson_scale': poisson_scale,
-            'ring_strength': ring_strength,
-            'fiber_density': fiber_density,
-            'fiber_strength': fiber_strength,
-            'blob_strength': blob_strength
-        }
-        noisy, gt_mask = generate_synthetic_ct(img_path, params)
-        os.makedirs(output_dir, exist_ok=True)
-        #output_filename = f"{os.path.basename(img_path).split('.')[0]}_curvature_{curvature}_mu_p_{mu_p}_sigma_p_{sigma_p}_delta_mu_{delta_mu}_sigma_i_{sigma_i}_sigma_xy_{sigma_xy}_gauss_sigma_{gauss_sigma}_poisson_scale_{poisson_scale}_ring_strength_{ring_strength}.png"
-        output_filename = f"{os.path.basename(img_path).split('.')[0]}_{letter}_fiber_strength_{fiber_strength}_fiber_density_{fiber_density}_blob_strength_{blob_strength}_gauss_sigma_{gauss_sigma}_{i}.bmp"
-        cv2.imwrite(os.path.join(output_dir, output_filename), noisy)
-        cv2.imwrite(os.path.join(output_dir, f"gt_mask_{output_filename}"), gt_mask)
-        paths.append([os.path.join(output_dir, output_filename), os.path.join(output_dir, f"gt_mask_{output_filename}"), letter])
+for level in levels:
+    # List of possible curvature values for cylindrical warping (simulates scroll curvature)
+    # Higher values = more curvature, which can make the letter harder to read due to distortion.
+    curvatures = np.array([0.001, 0.0012, 0.0014]) * level
+
+    # Mean intensity values for papyrus background (controls overall brightness)
+    # Lower values = darker background, which can make the letter harder to distinguish if ink is also dark.
+    mu_p_values =  np.array([30]) * level
+
+    # Standard deviation for papyrus background intensity (controls background noise)
+    # Higher values = more background noise, making the letter harder to read.
+    sigma_p_values =  np.array([1])* level/5
+
+    # Difference in mean intensity between ink and papyrus (controls ink contrast)
+    # Higher values = more contrast (easier to read); lower values = less contrast (harder to read).
+    delta_mu_values =  np.array([2]) * 5/level
+
+    # Standard deviation for ink intensity (controls ink noise)
+    # Higher values = noisier ink, which can make the letter harder to read.
+    sigma_i_values =  np.array([1, 2]) * level/5
+
+    # Standard deviation for CT blur in x/y (simulates CT resolution loss)
+    # Higher values = more blur, making the letter harder to read.
+    sigma_xy_values =  np.array([0.2]) * level/5
+
+    # Standard deviation for Gaussian noise added to CT image (controls graininess)
+    # Higher values = more grain/noise, making the letter harder to read.
+    gauss_sigma_values =  np.array([.0001]) * level**4
+
+    # Scaling factor for Poisson noise (simulates photon noise in CT)
+    # Values further from 1.0 = more noise, making the letter harder to read.
+    poisson_scale_values =  1 - np.array([.01**(1/level), -.01**(1/level)])
+
+    # Strength of ring artifact simulation (CT-specific artifact)
+    # Higher values = stronger ring artifacts, making the letter harder to read.
+    ring_strength_values =  np.array([0.001, 0.002])
+
+    # Density of papyrus fibers (controls how many fibers are generated)
+    # Higher values = more fibers, which can obscure the letter and make it harder to read.
+    fiber_density_values =  np.array([0.05])
+
+    # Strength of papyrus fibers (controls fiber visibility/contrast)
+    # Higher values = more visible fibers, which can make the letter harder to read.
+    fiber_strength_values =  np.array([0.1]) # Must be odd numbers/10
+
+    # Strength of blob artifacts (controls visibility of extraction blobs)
+    # Higher values = more prominent blobs, making the letter harder to read.
+    blob_strength_values =  np.array([0.5, .65, .8, 1])
+    i = 0
+
+    for letter in unique_greek_letters:
+        letter_img_paths = [path[1] for path in img_paths if path[0] == letter]
+        for _ in range(number_of_images_per_letter):
+            i += 1
+            img_path = np.random.choice(letter_img_paths)
+            assert os.path.exists(img_path)
+            curvature = np.random.choice(curvatures)
+            mu_p = np.random.choice(mu_p_values)
+            sigma_p = np.random.choice(sigma_p_values)
+            delta_mu = np.random.choice(delta_mu_values)
+            sigma_i = np.random.choice(sigma_i_values)
+            sigma_xy = np.random.choice(sigma_xy_values)
+            gauss_sigma = np.random.choice(gauss_sigma_values)
+            poisson_scale = np.random.choice(poisson_scale_values)
+            ring_strength = np.random.choice(ring_strength_values)
+            fiber_density = np.random.choice(fiber_density_values)
+            fiber_strength = np.random.choice(fiber_strength_values)
+            blob_strength = np.random.choice(blob_strength_values)
+            params = {
+                'curvature': curvature,
+                'mu_p': mu_p,
+                'sigma_p': sigma_p,
+                'delta_mu': delta_mu,
+                'sigma_i': sigma_i,
+                'sigma_xy': sigma_xy,
+                'gauss_sigma': gauss_sigma,
+                'poisson_scale': poisson_scale,
+                'ring_strength': ring_strength,
+                'fiber_density': fiber_density,
+                'fiber_strength': fiber_strength,
+                'blob_strength': blob_strength
+            }
+            noisy, gt_mask = generate_synthetic_ct(img_path, params)
+            os.makedirs(output_dir, exist_ok=True)
+            #output_filename = f"{os.path.basename(img_path).split('.')[0]}_curvature_{curvature}_mu_p_{mu_p}_sigma_p_{sigma_p}_delta_mu_{delta_mu}_sigma_i_{sigma_i}_sigma_xy_{sigma_xy}_gauss_sigma_{gauss_sigma}_poisson_scale_{poisson_scale}_ring_strength_{ring_strength}.png"
+            output_filename = f"{os.path.basename(img_path).split('.')[0]}_{letter}_level_{level}_{i}.bmp"
+            cv2.imwrite(os.path.join(output_dir, output_filename), noisy)
+            cv2.imwrite(os.path.join(output_dir, f"gt_mask_{output_filename}"), gt_mask)
+            paths.append([os.path.join(output_dir, output_filename), os.path.join(output_dir, f"gt_mask_{output_filename}"), letter, level])
 
 path_dict = {"paths": paths}
 
