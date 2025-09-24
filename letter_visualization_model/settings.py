@@ -102,7 +102,7 @@ print_every_batches = 1
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
 # load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/thismodelisverygood.pth"
-# load_from = None
+load_from = None
 # load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
 
 display_from = save_to
