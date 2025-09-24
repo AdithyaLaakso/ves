@@ -59,16 +59,16 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=50,
-    batch_size=64,
-    learning_rate=1e-5,
+    num_epochs=5,
+    batch_size=256,
+    learning_rate=2e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
 
-track_levels = False
+track_levels = True
 
-learning_rate_gamma=1.2
+learning_rate_gamma=1.1
 
 num_workers=0
 persistent_workers=False
@@ -78,11 +78,11 @@ persistent_workers=False
 data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 add_to_path = "/home/Adithya/Documents/"
 
-levels = [[i for i in range(10,25)]]
+levels = [[i for i in range(0,5)]]
 # levels = [0]
 
 # display_levels = levels[0]
-display_levels = [20]
+display_levels = levels[0]
 
 image_size=128
 patch_sizes=(8, 32) # coarse, fine
@@ -103,7 +103,7 @@ save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
 # load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/thismodelisverygood.pth"
 # load_from = None
-load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
 
 display_from = save_to
 # display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/18-2.pth"
@@ -130,7 +130,7 @@ meta_s = 1.0
 loss_settings = LossSettings(
     dice_weight=0.0,
     mse_weight=1.0,
-    boundary_weight=0.1,
+    boundary_weight=0.5,
     focal_weight=10.0,
     class_weight=2.0,
     class_weight_delta=0.00000,
