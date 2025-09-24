@@ -9,7 +9,8 @@ import shutil
 
 # Download latest version
 path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
-number_of_images_per_letter = 4
+number_of_images_per_letter = 10
+level = 1
 print(f"Dataset downloaded to {path}")
 def generate_irregular_blobs(size, smooth_sigma=8, min_area=0, max_area= 1500000):
     """Generate large, sparse, overlapping blobs from random noise."""
@@ -149,10 +150,10 @@ def add_ct_fragment_noise(gt_mask, fiber_density = .3, fiber_strength=0.4, blob_
     ink_intensity = -15  # ink slightly darker than background
     noisy[gt_mask_rotated > 0] += ink_intensity
     
-    blobs = generate_irregular_blobs(output_size, smooth_sigma=2, min_area=50)
+    #blobs = generate_irregular_blobs(output_size, smooth_sigma=2, min_area=50)
 
     # Step 5: Add final Gaussian noise to simulate CT grain
-    noisy += np.random.normal(0, gauss_sigma * 5, output_size) - blobs
+    noisy += np.random.normal(0, gauss_sigma * 5, output_size)# - blobs
     
     # Normalize to 0–255
     noisy = np.clip(noisy, 0, 255).astype(np.uint8)
@@ -248,19 +249,53 @@ def get_unigue_greek_letters(img_paths):
 img_paths = get_img_path_list(path)
 unique_greek_letters = get_unigue_greek_letters(img_paths)
 
+# List of possible curvature values for cylindrical warping (simulates scroll curvature)
+# Higher values = more curvature, which can make the letter harder to read due to distortion.
+curvatures = np.array([0.001, 0.0012, 0.0014]) * level
 
-curvatures = [0.001, 0.0012, 0.0014]
-mu_p_values = [95, 100, 105]
-sigma_p_values = [1, 2]
-delta_mu_values = [0, 0.2, 0.4]
-sigma_i_values = [1, 2]
-sigma_xy_values = [0.5, 0.6]
-gauss_sigma_values = [.001, .01, .05, .1, 0.3, 0.5]
-poisson_scale_values = [0.95, 1.0, 1.05]
-ring_strength_values = [0.001, 0.002]
-fiber_density_values = [0.3, 0.4, .5, 0.6] 
-fiber_strength_values = [0.5, 0.7, 0.9] # Must be odd numbers/10
-blob_strength_values = [0.5, .65, .8, 1]
+# Mean intensity values for papyrus background (controls overall brightness)
+# Lower values = darker background, which can make the letter harder to distinguish if ink is also dark.
+mu_p_values =  np.array([30]) * level
+
+# Standard deviation for papyrus background intensity (controls background noise)
+# Higher values = more background noise, making the letter harder to read.
+sigma_p_values =  np.array([1])* level/5
+
+# Difference in mean intensity between ink and papyrus (controls ink contrast)
+# Higher values = more contrast (easier to read); lower values = less contrast (harder to read).
+delta_mu_values =  np.array([2]) * 5/level
+
+# Standard deviation for ink intensity (controls ink noise)
+# Higher values = noisier ink, which can make the letter harder to read.
+sigma_i_values =  np.array([1, 2]) * level/5
+
+# Standard deviation for CT blur in x/y (simulates CT resolution loss)
+# Higher values = more blur, making the letter harder to read.
+sigma_xy_values =  np.array([0.2]) * level/5
+
+# Standard deviation for Gaussian noise added to CT image (controls graininess)
+# Higher values = more grain/noise, making the letter harder to read.
+gauss_sigma_values =  np.array([.0001]) * level**4
+
+# Scaling factor for Poisson noise (simulates photon noise in CT)
+# Values further from 1.0 = more noise, making the letter harder to read.
+poisson_scale_values =  1 - np.array([.01**(1/level), -.01**(1/level)])
+
+# Strength of ring artifact simulation (CT-specific artifact)
+# Higher values = stronger ring artifacts, making the letter harder to read.
+ring_strength_values =  np.array([0.001, 0.002])
+
+# Density of papyrus fibers (controls how many fibers are generated)
+# Higher values = more fibers, which can obscure the letter and make it harder to read.
+fiber_density_values =  np.array([0.05])
+
+# Strength of papyrus fibers (controls fiber visibility/contrast)
+# Higher values = more visible fibers, which can make the letter harder to read.
+fiber_strength_values =  np.array([0.1]) # Must be odd numbers/10
+
+# Strength of blob artifacts (controls visibility of extraction blobs)
+# Higher values = more prominent blobs, making the letter harder to read.
+blob_strength_values =  np.array([0.5, .65, .8, 1])
 i = 0
 
 paths = []
