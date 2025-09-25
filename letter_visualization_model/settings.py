@@ -79,7 +79,7 @@ data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 add_to_path = "/home/Adithya/Documents/"
 
 # levels = [[i for i in range(0,5)]]
-levels = [[i for i in range(0, 31)]]
+levels = [[i for i in range(0, 5)]]
 
 # display_levels = levels[0]
 display_levels = levels
