@@ -73,13 +73,13 @@ learning_rate_gamma=1.1
 num_workers=0
 persistent_workers=False
 
-# data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
-# add_to_path = ""
-data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
-add_to_path = "/home/Adithya/Documents/"
+data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
+add_to_path = ""
+# data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
+# add_to_path = "/home/Adithya/Documents/"
 
-# levels = [[i for i in range(0,5)]]
-levels = [1]
+levels = [[i for i in range(0,5)]]
+# levels = [1]
 
 # display_levels = levels[0]
 display_levels = levels
@@ -102,8 +102,8 @@ print_every_batches = 1
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
 # load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/thismodelisverygood.pth"
-# load_from = None
-load_from = "/home/Adithya/Documents/ves/letter_visualization_model/pretrainedonletters.pth"
+load_from = None
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/pretrain.pth"
 
 display_from = save_to
 # display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/18-2.pth"
