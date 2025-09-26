@@ -12,4 +12,16 @@ To train:
 2. Set the desired paramaters in letter_visualization_model/settings.py
 3. Run letter_visualization_model/setup.zsh
 
-If you have any questions, feel free to leave an issue.
+The model will save the .pth to the specified location (default new.pth).
+
+The script will automatically start logging to the specified log directory (default logs/).
+
+To view the logs:
+1. python -m tensorboard.main --logdir letter_visualization_model/logs/
+2. Navigate to localhost:6006 in your browser.
+
+To run inferance on a saved pth:
+1. Python letter_visualization_model/visualize_model.py example.pth
+2. Arrow keys navigate between samples, 'q' exits
+
+If you have any questions, feel free to leave an issue or reach out to me on discord.
