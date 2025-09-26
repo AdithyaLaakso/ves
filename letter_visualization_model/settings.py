@@ -59,7 +59,7 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=5,
+    num_epochs=2,
     batch_size=256,
     learning_rate=2e-3,
     train_percent=0.80,
@@ -78,7 +78,7 @@ persistent_workers=False
 data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
 add_to_path = "/home/Adithya/Documents/"
 
-levels = [[i for i in range(0,5)]]
+levels = [[i for i in range(0,31)]]
 # levels = [1]
 
 # display_levels = levels[0]
@@ -103,7 +103,7 @@ save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
 # load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/thismodelisverygood.pth"
 # load_from = None
-load_from = "/home/Adithya/Documents/ves/letter_visualization_model/pretrainlevel1.pth"
+load_from = "/home/Adithya/Documents/ves/letter_visualization_model/pretrain0to5.pth"
 
 display_from = save_to
 # display_from = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints/18-2.pth"

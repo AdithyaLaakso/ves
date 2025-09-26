@@ -19,9 +19,16 @@ limit = 15  # Number of samples to visualize
 with open(settings.data_path, 'r') as f:
     paths_dict = json.load(f)
 
+levels = []
+if isinstance(settings.display_levels[0], list):
+    levels = settings.display_levels[0]
+else:
+    levels = settings.display_levels
+
+
 # Filter level 30 examples
 if settings.track_levels:
-    vals = [i for i in paths_dict['paths'] if int(i[3]) in settings.display_levels]
+    vals = [i for i in paths_dict['paths'] if int(i[3]) in levels]
 else:
     vals = [i for i in paths_dict['paths']]
 #level_30 = [i for i in paths_dict['paths'] if int(i[3]) == 30]
