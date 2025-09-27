@@ -62,7 +62,6 @@ segmentation_hyperparams = SegmentationHyperparams(
     optimizer_class=torch.optim.AdamW,
 )
 
-track_levels = True
 
 learning_rate_gamma=1.1
 
@@ -75,6 +74,7 @@ data_path = "../data/paths.json"
 # add_to_path = "../data/"
 add_to_path = "../data/"
 
+track_levels = True
 levels = [[i for i in range(0,31)]]
 # levels = [1]
 

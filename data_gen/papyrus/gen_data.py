@@ -9,7 +9,7 @@ import shutil
 
 # Download latest version
 path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
-number_of_images_per_letter = 1000000
+number_of_images_per_letter = 10000
 levels = range(1,30, 5)
 print(f"Dataset downloaded to {path}")
 def generate_irregular_blobs(size, smooth_sigma=8, min_area=0, max_area= 1500000):
