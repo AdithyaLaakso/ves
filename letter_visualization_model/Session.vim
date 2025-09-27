@@ -13,6 +13,7 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
+<<<<<<< HEAD
 badd +72 train_reconstruction.py
 badd +89 settings.py
 badd +104 loss.py
@@ -20,6 +21,15 @@ badd +150 dataset.py
 badd +21 visualize_model.py
 badd +48 setup.zsh
 badd +40 model.py
+=======
+badd +53 train_reconstruction.py
+badd +57 settings.py
+badd +1 loss.py
+badd +94 dataset.py
+badd +37 visualize_model.py
+badd +34 setup.zsh
+badd +54 model.py
+>>>>>>> attempting-to-recreate-breakthrough
 badd +1 datasetarchived.py
 badd +1 ~/Documents/noise_source_prog/level_10_noisy_ALPHAform_100.bmp
 badd +113 ~/.local/lib/python3.13/site-packages/torch/utils/data/dataloader.py
@@ -31,7 +41,11 @@ argglobal
 $argadd train_reconstruction.py
 edit settings.py
 argglobal
+<<<<<<< HEAD
 balt model.py
+=======
+balt loss.py
+>>>>>>> attempting-to-recreate-breakthrough
 setlocal foldmethod=manual
 setlocal foldexpr=0
 setlocal foldmarker={{{,}}}
@@ -42,12 +56,21 @@ setlocal foldnestmax=20
 setlocal foldenable
 silent! normal! zE
 let &fdl = &fdl
+<<<<<<< HEAD
 let s:l = 89 - ((18 * winheight(0) + 18) / 37)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
 keepjumps 89
 normal! 084|
+=======
+let s:l = 56 - ((18 * winheight(0) + 18) / 37)
+if s:l < 1 | let s:l = 1 | endif
+keepjumps exe s:l
+normal! zt
+keepjumps 56
+normal! 016|
+>>>>>>> attempting-to-recreate-breakthrough
 lcd ~/Documents/ves/letter_visualization_model
 tabnext 1
 if exists('s:wipebuf') && len(win_findbuf(s:wipebuf)) == 0 && getbufvar(s:wipebuf, '&buftype') isnot# 'terminal'

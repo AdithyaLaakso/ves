@@ -6,8 +6,12 @@ import torch.multiprocessing as mp
 import constants
 
 from collections import namedtuple
+import sys
 import os
 import glob
+import logging
+
+logging.getLogger("torch._dynamo").setLevel(logging.DEBUG)
 
 mp.set_start_method('spawn', force=True)
 
@@ -19,9 +23,12 @@ torch.backends.cudnn.benchmark = True
 # torch.backends.cudnn.fp32_precision = "tf32"
 # torch.backends.cudnn.conv.fp32_precision = "tf32"
 # torch.backends.cudnn.rnn.fp32_precision = "tf32"
+#
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
 
-dynamo.config.recompile_limit = 8
-dynamo.config.accumulated_recompile_limit = 8
+dynamo.config.recompile_limit = 100
+dynamo.config.accumulated_recompile_limit = 100
 torch._dynamo.config.allow_unspec_int_on_nn_module = True
 torch._dynamo.config.capture_scalar_outputs = True
 torch._dynamo.config.suppress_errors = False
@@ -29,6 +36,8 @@ torch._dynamo.config.disable = True
 torch._dynamo.config.verbose = True
 torch.cuda.empty_cache()
 faulthandler.enable()
+
+base_path = "/home/Adithya/Documents/ves/letter_visualization_model/"
 
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_size = None
@@ -46,37 +55,41 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=10,
-    batch_size=32,
+    num_epochs=20,
+    batch_size=256,
     learning_rate=1e-3,
-    train_percent=1.00,
+    train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
 
-# track_levels = True
-learning_rate_gamma=0.00
+track_levels = True
+
+learning_rate_gamma=1.1
 
 num_workers=0
+persistent_workers=False
 
-data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
-add_to_path = ""
-# data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
-# add_to_path = "/home/Adithya/Documents/"
+# data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
+# add_to_path = ""
+data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
+add_to_path = "/home/Adithya/Documents/"
 
-levels = [10]
+levels = [[i for i in range(0,31)]]
+# levels = [1]
 
-display_levels = [5]
-# display_levels = [i for i in range ()]
+# display_levels = levels[0]
+display_levels = levels
 
 image_size=128
-patch_sizes=(16, 8) # coarse, fine
+patch_sizes=(8, 32) # coarse, fine
 #patch_size=4
 in_channels=1
 out_channels=1
 embed_size=300
-num_blocks=30
+num_blocks=15
 num_heads=10
 dropout=0.2
+input_size=128
 output_size=32
 use_gradient=True
 num_classes=24
@@ -85,18 +98,23 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
-# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/start.pth"
-load_from = None
+# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/thismodelisverygood.pth"
+# load_from = None
+load_from = "/home/Adithya/Documents/ves/letter_visualization_model/twoepochsfullset.pth"
 
 # display_from = save_to
 display_from = save_to
 
-save_to_dir = "/home/Adithya/Documents/ves/letter_visualization_model/checkpoints"
-
-# log_dir = None
 stamp_files = glob.glob("*.stamp")
-log_dir = "./logs/" + os.path.splitext(stamp_files[0])[0] if len(stamp_files) == 1 else None
+stamp_path = os.path.splitext(stamp_files[0])[0] if len(stamp_files) == 1 else None
+if not stamp_path:
+    print("bruh no stamp_path")
+    sys.exit()
+
+stamp_path = stamp_path[0]
+log_dir = "./logs/" + stamp_path
 print (f"logging to: {log_dir}")
+save_to_dir = "./checkpoints/" + stamp_path
 
 meta_div_weight = 0.0
 meta_f_weight = 1.0
@@ -108,10 +126,10 @@ meta_s = 1.0
 
 loss_settings = LossSettings(
     dice_weight=0.0,
-    mse_weight=3.0,
-    boundary_weight=1.0,
-    focal_weight=0.0,
-    class_weight=1.00,
+    mse_weight=1.0,
+    boundary_weight=0.5,
+    focal_weight=10.0,
+    class_weight=2.0,
     class_weight_delta=0.00000,
     focal_alpha=0.2,
     focal_gamma=2.0
