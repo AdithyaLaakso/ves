@@ -40,7 +40,6 @@ def train_epoch(model, loader, optimizer, criterion, scaler, epoch=0):
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
-        del loss
 
         total_loss += (loss.item() * settings.segmentation_hyperparams.batch_size)
         samples += settings.segmentation_hyperparams.batch_size
