@@ -1,9 +1,9 @@
 #!/bin/zsh
 
-if ! git diff --quiet || ! git diff --cached --quiet; then
-	echo "⚠️ Script can only run on a commited state. It is frustrating but think of all the progress you have lost..."
-  exit 1
-fi
+# if ! git diff --quiet || ! git diff --cached --quiet; then
+# 	echo "⚠️ Script can only run on a commited state. It is frustrating but think of all the progress you have lost..."
+#   exit 1
+# fi
 
 commit_hash=$(git rev-parse --short HEAD)
 
