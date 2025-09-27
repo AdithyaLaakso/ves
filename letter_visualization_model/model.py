@@ -26,45 +26,28 @@ def compute_edge_map(x):
     return edges
 
 class PatchEmbed(nn.Module):
-    def __init__(self, patch_size=8, embed_dim=128, in_chans=1):
+    def __init__(self, patch_size=8, stride=8, embed_dim=128, in_chans=1):
         super().__init__()
         self.patch_size = patch_size
+        self.stride = stride
         self.embed_dim = embed_dim
-        self.in_chans = in_chans
 
-        # Each patch (flattened) → embed_dim
-        patch_dim = in_chans * patch_size * patch_size
-        self.proj = nn.Sequential(
-            # nn.LayerNorm(patch_dim),
-            nn.Linear(patch_dim, embed_dim),
-            # nn.ReLU(),
-        )
+        #todo: try without this
+        self.proj = nn.Conv2d(in_chans, embed_dim,
+                              kernel_size=patch_size, stride=stride)
 
     def forward(self, x):
-        B, C, H, W = x.shape
-
-        # unfold into non-overlapping patches
-        patches = nn.functional.unfold(
-            x,
-            kernel_size=self.patch_size,
-            stride=self.patch_size
-        )  # [B, patch_dim, L]
-
-        patches = patches.transpose(1, 2)  # [B, L, patch_dim]
-        patches = self.proj(patches)       # [B, L, embed_dim]
-
-        # spatial resolution after patching
-        H_out = H // self.patch_size
-        W_out = W // self.patch_size
-
-        return patches, (H_out, W_out)
+        patches = self.proj(x)  # [B, C, H', W']
+        B, C, H, W = patches.shape
+        patches = patches.flatten(2).transpose(1, 2)  # [B, HW, C]
+        return patches, (H, W)
 
 class MultiScalePatchEmbed(nn.Module):
     def __init__(self, embed_dim=128, in_chans=1):
         super().__init__()
         csize, fsize = settings.patch_sizes
-        self.coarse = PatchEmbed(csize, embed_dim, in_chans)
-        self.fine   = PatchEmbed(fsize, embed_dim, in_chans)
+        self.coarse = PatchEmbed(csize, csize, embed_dim, in_chans)
+        self.fine   = PatchEmbed(fsize, fsize, embed_dim, in_chans)
         self.type_embed = nn.Embedding(2, embed_dim)  # 0=coarse, 1=fine
 
     def forward(self, x):
@@ -315,7 +298,7 @@ class SimpleEncoderBlock(nn.Module):
         return x
 
 class VisionTransformerForSegmentationMultiScale(nn.Module):
-    def __init__(self, use_gradient_checkpointing=settings.use_gradient, num_classes=settings.num_classes):
+    def __init__(self, use_gradient_checkpointing=settings.use_gradient, num_classes=25):
         super().__init__()
         # read settings with sensible fallbacks
         self.output_size = settings.output_size
@@ -357,7 +340,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Classification head (hybrid: tokens + segmentation map)
         if settings.mode == settings.MULTITASK:
-            self.classifier = HybridClassifier(num_classes=num_classes)
+            self.classifier = HybridClassifier(embed_dim=self.embed_size, num_classes=num_classes)
 
     def forward(self, x):
         B = x.size(0)
@@ -397,8 +380,14 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
 
 class HybridClassifier(nn.Module):
-    def __init__(self, num_classes=settings.num_classes):
+    def __init__(self, embed_dim=128, num_classes=24):
         super().__init__()
+        # Token branch
+        self.token_fc = nn.Sequential(
+            nn.Linear(embed_dim, 256),
+            nn.ReLU(),
+        )
+
         # Segmentation map branch
         self.seg_conv = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, padding=1),
@@ -449,7 +438,7 @@ class HybridClassifier(nn.Module):
         fused = torch.cat([token_feat, seg_feat, img_feat], dim=1)  # (B, 2816)
         return self.fc(fused)
 
-def build_model(compile_model=True, load_from=None, device=settings.device):
+def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
     if load_from is not None:
