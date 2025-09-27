@@ -50,6 +50,6 @@ rm *.stamp
 file_name=$commit_hash".stamp"
 touch $file_name
 killall tensorboard
-nohup python -m tensorbord.main --logdir ./logs/$commit_hash &
+nohup python -m tensorbord.main --logdir --port=6006 ./logs/$commit_hash &
 
 python3 train_reconstruction.py && python3 visualize_model.py
