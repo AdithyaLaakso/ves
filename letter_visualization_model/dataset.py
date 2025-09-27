@@ -100,6 +100,7 @@ class SegData(Dataset):
         elif flip_type == 4:
             input_tensor = torch.flip(input_tensor, dims=[1, 0])
             mask_tensor = torch.flip(mask_tensor, dims=[1, 0])
+
         if settings.mode == settings.RECONSTRUCTION:
             return input_tensor, mask_tensor
         elif settings.mode == settings.MULTITASK:
@@ -147,7 +148,7 @@ def create_loader(dataset, batch_size=32, shuffle=True, device=settings.device, 
         num_workers=num_workers,
         collate_fn=partial(collate_fn, device=device),
         pin_memory=False,
-        persistent_workers=False
+        persistent_workers=settings.persistent_workers
     )
 
     return loader
