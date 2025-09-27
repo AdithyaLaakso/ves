@@ -7,7 +7,7 @@
 
 commit_hash=$(git rev-parse --short HEAD)
 
-sudo nvidia-smi -caa
+# sudo nvidia-smi -caa
 # ----------------------------
 # CPU / OpenMP / MKL settings
 # ----------------------------
@@ -33,7 +33,7 @@ export CUDNN_BENCHMARK=1
 # ----------------------------
 # Logging
 # ----------------------------
-export TORCH_TRACE=./logs.txt
+# export TORCH_TRACE=./logs.txt
 # export TORCH_LOGS=
 export TORCHDYNAMO_VERBOSE=1
 # export TORCH_COMPILE_DEBUG=
@@ -50,6 +50,6 @@ rm *.stamp
 file_name=$commit_hash".stamp"
 touch $file_name
 killall tensorboard
-nohup tensorboard --logdir ./logs/$commit_hash &
+nohup python -m tensorbord.main --logdir ./logs/$commit_hash &
 
 python3 train_reconstruction.py && python3 visualize_model.py

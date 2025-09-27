@@ -9,7 +9,7 @@ import shutil
 
 # Download latest version
 path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
-number_of_images_per_letter = 1
+number_of_images_per_letter = 1000000
 levels = range(1,30, 5)
 print(f"Dataset downloaded to {path}")
 def generate_irregular_blobs(size, smooth_sigma=8, min_area=0, max_area= 1500000):
@@ -111,7 +111,7 @@ def add_ct_fragment_noise(gt_mask, fiber_density = .3, fiber_strength=0.4, blob_
         fiber_map[:, x_start:x_end] = fiber_noise
     # Rotate fiber_map to match the fiber rotation applied above
     center = (w // 2, h // 2)
-    
+
     # Add curvature and sharpness to individual fibers
     rot_mat_1 = cv2.getRotationMatrix2D(center, angle1, 1.0)
     rot_mat_2 = cv2.getRotationMatrix2D(center, angle2, 1.0)
@@ -145,21 +145,21 @@ def add_ct_fragment_noise(gt_mask, fiber_density = .3, fiber_strength=0.4, blob_
     base_intensity = np.random.normal(127, 5, output_size)
     # Add fiber_map as a modulation to fiber strength
     noisy = base_intensity + fiber_strength * (fibers - 127) * fiber_map + blob_strength
-    
+
     # Step 4: Embed ink with subtle contrast
     ink_intensity = -15  # ink slightly darker than background
     noisy[gt_mask_rotated > 0] += ink_intensity
-    
+
     #blobs = generate_irregular_blobs(output_size, smooth_sigma=2, min_area=50)
 
     # Step 5: Add final Gaussian noise to simulate CT grain
     noisy += np.random.normal(0, gauss_sigma * 5, output_size)# - blobs
-    
+
     # Normalize to 0–255
     noisy = np.clip(noisy, 0, 255).astype(np.uint8)
-    
 
-    
+
+
     return noisy
 
 def smooth_and_add_contrast(image, sigma=1.0, contrast_factor=1.2):
@@ -207,7 +207,7 @@ def simulate_ct_blur(image, sigma_xy=1):
 def add_ct_noise(image, gauss_sigma=1, poisson_scale=1.0, ring_strength=0.01):
     noisy = image + np.random.normal(0, gauss_sigma, image.shape)
     noisy = np.random.poisson(noisy * poisson_scale) / poisson_scale
-    
+
     # Simulate faint ring artifact
     h, w = image.shape
     y, x = np.indices((h, w))
@@ -215,7 +215,7 @@ def add_ct_noise(image, gauss_sigma=1, poisson_scale=1.0, ring_strength=0.01):
     r = np.sqrt((x - center[1])**2 + (y - center[0])**2)
     rings = np.sin(r / 3) * ring_strength * np.max(image)
     noisy += rings
-    
+
     noisy = np.clip(noisy, 0, 255)
     return noisy.astype(np.uint8)
 
@@ -250,7 +250,7 @@ img_paths = get_img_path_list(path)
 unique_greek_letters = get_unigue_greek_letters(img_paths)
 
 paths = []
-output_dir = f"synthetic_ct_images/"
+output_dir = f"./data/"
 
 if os.path.exists(output_dir):
     shutil.rmtree(output_dir)
@@ -342,7 +342,7 @@ for level in levels:
             output_filename = f"{os.path.basename(img_path).split('.')[0]}_{letter}_level_{level}_{i}.bmp"
             cv2.imwrite(os.path.join(output_dir, output_filename), noisy)
             cv2.imwrite(os.path.join(output_dir, f"gt_mask_{output_filename}"), gt_mask)
-            paths.append([os.path.join(output_dir, output_filename), os.path.join(output_dir, f"gt_mask_{output_filename}"), letter, level])
+            paths.append([output_filename, f"gt_mask_{output_filename}", letter, level])
 
 path_dict = {"paths": paths}
 
