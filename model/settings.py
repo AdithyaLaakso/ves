@@ -71,8 +71,9 @@ persistent_workers=False
 
 # data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 # add_to_path = ""
-data_path = "/home/Adithya/Documents/synthetic_ct_images/paths.json"
-add_to_path = "/home/Adithya/Documents/"
+data_path = "../data/paths.json"
+# add_to_path = "../data/"
+add_to_path = "../data/"
 
 levels = [[i for i in range(0,31)]]
 # levels = [1]
@@ -97,13 +98,8 @@ num_classes=24
 print_every_batches = 1
 
 save_every_epoch = True
-save_to = "/home/Adithya/Documents/ves/letter_visualization_model/new.pth"
-# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/saved_models/thismodelisverygood.pth"
-# load_from = None
-# load_from = "/home/Adithya/Documents/ves/letter_visualization_model/twoepochsfullset.pth"
+save_to = "./new.pth"
 load_from = None
-
-# display_from = save_to
 display_from = save_to
 
 stamp_files = glob.glob("*.stamp")

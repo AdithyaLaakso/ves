@@ -15,3 +15,4 @@ lightning_logs/
 *saved_models
 *.out
 *logs.txt
+data/
