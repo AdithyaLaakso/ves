@@ -9,8 +9,8 @@ import shutil
 
 # Download latest version
 path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
-number_of_images_per_letter = 10000
-levels = range(1,30, 5)
+number_of_images_per_letter = 10
+levels = [1]
 print(f"Dataset downloaded to {path}")
 def generate_irregular_blobs(size, smooth_sigma=8, min_area=0, max_area= 1500000):
     """Generate large, sparse, overlapping blobs from random noise."""
@@ -73,7 +73,7 @@ def generate_papyrus_fiber_texture(size, fiber_density=0.3, fiber_strength=1.5):
     # Apply strong directional blur to create fibers
     fibers = fiber_density * cv2.GaussianBlur(noise, (1, int(fiber_strength * 10)), 0)
     # Randomly choose rotation angle: either between -30 and 30, or between 150 and 210 degrees
-    angle1 = np.random.uniform(-30, 30)
+    angle1 = np.random.uniform(-45, 45)
     angle2 = angle1 + 180
     # Rotate the fiber image
     center = (w // 2, h // 2)
@@ -160,7 +160,7 @@ def add_ct_fragment_noise(gt_mask, fiber_density = .3, fiber_strength=0.4, blob_
 
 
 
-    return noisy
+    return noisy, gt_mask_rotated
 
 def smooth_and_add_contrast(image, sigma=1.0, contrast_factor=1.2):
     """Smooth the image and add contrast."""
@@ -222,12 +222,12 @@ def add_ct_noise(image, gauss_sigma=1, poisson_scale=1.0, ring_strength=0.01):
 # --- Step 6: Full synthetic generator ---
 def generate_synthetic_ct(text_image_path, params, output_size=(128, 128)):
     mask = load_or_render_text_mask(text_image_path, output_size)
-    noisy_ct = add_ct_fragment_noise(mask, fiber_density=params['fiber_density'], fiber_strength=params['fiber_strength'], blob_strength=params['blob_strength'], gauss_sigma=params['gauss_sigma'], output_size = output_size)
+    noisy_ct, mask_rotated = add_ct_fragment_noise(mask, fiber_density=params['fiber_density'], fiber_strength=params['fiber_strength'], blob_strength=params['blob_strength'], gauss_sigma=params['gauss_sigma'], output_size = output_size)
     #warped_mask = cylindrical_warp(mask, params['curvature'])
     #base_img = embed_into_papyrus(warped_mask, params['mu_p'], params['sigma_p'], params['delta_mu'], params['sigma_i'])
     #blurred = simulate_ct_blur(base_img, params['sigma_xy'])
     #noisy_ct = add_ct_noise(blurred, params['gauss_sigma'], params['poisson_scale'], params['ring_strength'])
-    return noisy_ct, mask
+    return noisy_ct, mask_rotated
 
 def get_img_path_list(kaggle_path):
     img_path_list = []
@@ -339,10 +339,10 @@ for level in levels:
             noisy, gt_mask = generate_synthetic_ct(img_path, params)
             os.makedirs(output_dir, exist_ok=True)
             #output_filename = f"{os.path.basename(img_path).split('.')[0]}_curvature_{curvature}_mu_p_{mu_p}_sigma_p_{sigma_p}_delta_mu_{delta_mu}_sigma_i_{sigma_i}_sigma_xy_{sigma_xy}_gauss_sigma_{gauss_sigma}_poisson_scale_{poisson_scale}_ring_strength_{ring_strength}.png"
-            output_filename = f"{os.path.basename(img_path).split('.')[0]}_{letter}_level_{level}_{i}.bmp"
+            output_filename = f"{i}_{os.path.basename(img_path).split('.')[0]}_{letter}_level_{level}.bmp"
             cv2.imwrite(os.path.join(output_dir, output_filename), noisy)
-            cv2.imwrite(os.path.join(output_dir, f"gt_mask_{output_filename}"), gt_mask)
-            paths.append([output_filename, f"gt_mask_{output_filename}", letter, level])
+            cv2.imwrite(os.path.join(output_dir, f"{i}_gt_mask_{output_filename}"), gt_mask)
+            paths.append([output_filename, f"{i}_gt_mask_{output_filename}", letter, level])
 
 path_dict = {"paths": paths}
 
