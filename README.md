@@ -42,4 +42,4 @@ To run inference visualizer on a saved model:
 
 Note: the model has only been tested on Linux. If there is interest in windows/OSX support, add an issue or contact on discord.
 
-If you have any questions, feel free to leave an issue or reach out to on discord.
+If you have any questions, feel free to leave an issue or reach out on discord.
