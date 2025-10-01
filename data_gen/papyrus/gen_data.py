@@ -10,7 +10,7 @@ import shutil
 # Download latest version
 path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
 number_of_images_per_letter = 10
-levels = [1]
+levels = [1, 2, 3, 4, 5, 15, 30]
 print(f"Dataset downloaded to {path}")
 def generate_irregular_blobs(size, smooth_sigma=8, min_area=0, max_area= 1500000):
     """Generate large, sparse, overlapping blobs from random noise."""
@@ -91,7 +91,7 @@ def generate_papyrus_fiber_texture(size, fiber_density=0.3, fiber_strength=1.5):
     fibers_combined = (fibers_combined * 255).astype(np.uint8)
     return fibers_combined, angle1, angle2
 
-def add_ct_fragment_noise(gt_mask, fiber_density = .3, fiber_strength=0.4, blob_strength=0.3, gauss_sigma=1.0, output_size=(128, 128)):
+def add_ct_fragment_noise(gt_mask, fiber_density = .3, fiber_strength=0.4, blob_strength=0.3, gauss_sigma=1.0, mask_clarity = 2, output_size=(128, 128)):
     """Add noise resembling CT papyrus fragment with fibers + extraction blobs."""
     gt_mask_rotated = rotate_letter(gt_mask)
 
@@ -147,7 +147,7 @@ def add_ct_fragment_noise(gt_mask, fiber_density = .3, fiber_strength=0.4, blob_
     noisy = base_intensity + fiber_strength * (fibers - 127) * fiber_map + blob_strength
 
     # Step 4: Embed ink with subtle contrast
-    ink_intensity = -15  # ink slightly darker than background
+    ink_intensity = -15 * mask_clarity # ink slightly darker than background
     noisy[gt_mask_rotated > 0] += ink_intensity
 
     #blobs = generate_irregular_blobs(output_size, smooth_sigma=2, min_area=50)
@@ -222,7 +222,7 @@ def add_ct_noise(image, gauss_sigma=1, poisson_scale=1.0, ring_strength=0.01):
 # --- Step 6: Full synthetic generator ---
 def generate_synthetic_ct(text_image_path, params, output_size=(128, 128)):
     mask = load_or_render_text_mask(text_image_path, output_size)
-    noisy_ct, mask_rotated = add_ct_fragment_noise(mask, fiber_density=params['fiber_density'], fiber_strength=params['fiber_strength'], blob_strength=params['blob_strength'], gauss_sigma=params['gauss_sigma'], output_size = output_size)
+    noisy_ct, mask_rotated = add_ct_fragment_noise(mask, fiber_density=params['fiber_density'], fiber_strength=params['fiber_strength'], blob_strength=params['blob_strength'], gauss_sigma=params['gauss_sigma'], mask_clarity=params['mask_clarity'], output_size = output_size)
     #warped_mask = cylindrical_warp(mask, params['curvature'])
     #base_img = embed_into_papyrus(warped_mask, params['mu_p'], params['sigma_p'], params['delta_mu'], params['sigma_i'])
     #blurred = simulate_ct_blur(base_img, params['sigma_xy'])
@@ -261,19 +261,19 @@ for level in levels:
 
     # Mean intensity values for papyrus background (controls overall brightness)
     # Lower values = darker background, which can make the letter harder to distinguish if ink is also dark.
-    mu_p_values =  np.array([30]) * level
+    mu_p_values =  np.array([30])
 
     # Standard deviation for papyrus background intensity (controls background noise)
     # Higher values = more background noise, making the letter harder to read.
-    sigma_p_values =  np.array([1])* level/5
+    sigma_p_values =  np.array([1])
 
     # Difference in mean intensity between ink and papyrus (controls ink contrast)
     # Higher values = more contrast (easier to read); lower values = less contrast (harder to read).
-    delta_mu_values =  np.array([2]) * 5/level
+    delta_mu_values =  np.array([100]) * 5/(level**2)
 
     # Standard deviation for ink intensity (controls ink noise)
     # Higher values = noisier ink, which can make the letter harder to read.
-    sigma_i_values =  np.array([1, 2]) * level/5
+    sigma_i_values =  np.array([1]) * level/5
 
     # Standard deviation for CT blur in x/y (simulates CT resolution loss)
     # Higher values = more blur, making the letter harder to read.
@@ -281,11 +281,11 @@ for level in levels:
 
     # Standard deviation for Gaussian noise added to CT image (controls graininess)
     # Higher values = more grain/noise, making the letter harder to read.
-    gauss_sigma_values =  np.array([.0001]) * level**4
+    gauss_sigma_values =  np.array([.005]) * level
 
     # Scaling factor for Poisson noise (simulates photon noise in CT)
     # Values further from 1.0 = more noise, making the letter harder to read.
-    poisson_scale_values =  1 - np.array([.01**(1/level), -.01**(1/level)])
+    poisson_scale_values =  1 - np.array([.001**(1/level), -.001**(1/level)])
 
     # Strength of ring artifact simulation (CT-specific artifact)
     # Higher values = stronger ring artifacts, making the letter harder to read.
@@ -293,11 +293,13 @@ for level in levels:
 
     # Density of papyrus fibers (controls how many fibers are generated)
     # Higher values = more fibers, which can obscure the letter and make it harder to read.
-    fiber_density_values =  np.array([0.05])
+    fiber_density_values =  np.array([0.15])
 
     # Strength of papyrus fibers (controls fiber visibility/contrast)
     # Higher values = more visible fibers, which can make the letter harder to read.
-    fiber_strength_values =  np.array([0.1]) # Must be odd numbers/10
+    fiber_strength_values =  np.array([.3]) # Must be odd numbers/10
+
+    mask_clarity = 5/(level ** 0.7)  # Higher values = clearer ink, making the letter easier to read.
 
     # Strength of blob artifacts (controls visibility of extraction blobs)
     # Higher values = more prominent blobs, making the letter harder to read.
@@ -334,7 +336,8 @@ for level in levels:
                 'ring_strength': ring_strength,
                 'fiber_density': fiber_density,
                 'fiber_strength': fiber_strength,
-                'blob_strength': blob_strength
+                'blob_strength': blob_strength,
+                'mask_clarity': mask_clarity
             }
             noisy, gt_mask = generate_synthetic_ct(img_path, params)
             os.makedirs(output_dir, exist_ok=True)
