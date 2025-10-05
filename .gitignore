@@ -16,3 +16,4 @@ lightning_logs/
 *.out
 *logs.txt
 data/
+image_cropping/assets/*
