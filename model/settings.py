@@ -57,7 +57,7 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 segmentation_hyperparams = SegmentationHyperparams(
     num_epochs=20,
     batch_size=256,
-    learning_rate=1e-3,
+    learning_rate=7e-3,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
@@ -71,12 +71,12 @@ persistent_workers=False
 # data_path = "/home/Adithya/Documents/noise_source_prog/paths.json"
 # add_to_path = ""
 data_path = "../data/paths.json"
-# add_to_path = "../data/"
 add_to_path = "../data/"
+# add_to_path = "../data/"
 
 track_levels = True
 levels = [[i for i in range(0,31)]]
-# levels = [1]
+# levels = [0]
 
 # display_levels = levels[0]
 display_levels = levels
@@ -99,7 +99,7 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "./new.pth"
-load_from = None
+load_from = "./start.pth"
 display_from = save_to
 
 stamp_files = glob.glob("*.stamp")
@@ -121,10 +121,13 @@ meta_c_weight = 1.0
 meta_m_weight = 0.0
 meta_s = 1.0
 
+freeze_class = False
+freeze_recon = False
+
 loss_settings = LossSettings(
     dice_weight=0.0,
     mse_weight=1.0,
-    boundary_weight=0.5,
+    boundary_weight=0.1,
     focal_weight=10.0,
     class_weight=2.0,
     class_weight_delta=0.00000,

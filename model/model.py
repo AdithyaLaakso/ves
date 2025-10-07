@@ -438,6 +438,48 @@ class HybridClassifier(nn.Module):
         fused = torch.cat([token_feat, seg_feat, img_feat], dim=1)  # (B, 2816)
         return self.fc(fused)
 
+def freeze_classification_branch(model):
+    if hasattr(model, 'classifier'):
+        for param in model.classifier.parameters():
+            param.requires_grad = False
+        print(" Classification branch frozen")
+
+    for param in model.encoder.parameters():
+        param.requires_grad = True
+    for param in model.coarse_transformer.parameters():
+        param.requires_grad = True
+    for param in model.fine_transformer.parameters():
+        param.requires_grad = True
+    for param in model.decoder.parameters():
+        param.requires_grad = True
+
+    print(" Encoder, Transformers, and Decoder remain trainable")
+    return model
+
+
+def freeze_segmentation_branch(model):
+    # Freeze the decoder
+    for param in model.decoder.parameters():
+        param.requires_grad = False
+    print("Decoder frozen")
+
+    # Optionally freeze transformers too (they serve segmentation primarily)
+    for param in model.coarse_transformer.parameters():
+        param.requires_grad = False
+    for param in model.fine_transformer.parameters():
+        param.requires_grad = False
+    print("Transformers frozen")
+
+    # Keep encoder and classifier trainable
+    for param in model.encoder.parameters():
+        param.requires_grad = True
+    if hasattr(model, 'classifier'):
+        for param in model.classifier.parameters():
+            param.requires_grad = True
+
+    print("Encoder and Classifier remain trainable")
+    return model
+
 def build_model(compile_model=False, load_from=None, device=settings.device):
     model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
 
@@ -449,6 +491,13 @@ def build_model(compile_model=False, load_from=None, device=settings.device):
         print(f"loading from: {settings.load_from}")
         state_dict = torch.load(settings.load_from)
         model.load_state_dict(state_dict, strict=False)
+
+    if settings.freeze_class:
+        assert(not settings.freeze_recon)
+        model = freeze_classification_branch(model)
+    if settings.freeze_recon:
+        assert(not settings.freeze_class)
+        model = freeze_segmentation_branch(model)
 
     if compile_model:
         model = torch.compile(model, dynamic=True)
