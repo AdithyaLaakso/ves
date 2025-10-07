@@ -11,7 +11,7 @@ import os
 import glob
 import logging
 
-logging.getLogger("torch._dynamo").setLevel(logging.DEBUG)
+# logging.getLogger("torch._dynamo").setLevel(logging.DEBUG)
 
 mp.set_start_method('spawn', force=True)
 
@@ -102,16 +102,9 @@ save_to = "./new.pth"
 load_from = "./start.pth"
 display_from = save_to
 
-stamp_files = glob.glob("*.stamp")
-stamp_path = os.path.splitext(stamp_files[0])[0] if len(stamp_files) == 1 else None
-if not stamp_path:
-    print("bruh no stamp_path")
-    sys.exit()
-
-stamp_path = stamp_path[0]
-log_dir = "./logs/" + stamp_path
+log_dir = "./logs/"
 print (f"logging to: {log_dir}")
-save_to_dir = "./checkpoints/" + stamp_path
+save_to_dir = "./checkpoints/"
 
 meta_div_weight = 0.0
 meta_f_weight = 1.0
