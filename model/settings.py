@@ -99,7 +99,8 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "./new.pth"
-load_from = "./start.pth"
+# load_from = "./start.pth"
+load_from = None
 display_from = save_to
 
 log_dir = "./logs/"
