@@ -1,14 +1,18 @@
 import numpy as np
 import cv2
 from scipy.ndimage import gaussian_filter, map_coordinates
-import math
+import sys
 import os
 import json
 import kagglehub
 import shutil
 
 # Download latest version
-path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
+if len(sys.argv) > 1:
+    path = sys.argv[1]
+else:
+    path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
+
 number_of_images_per_letter = 10
 levels = [1, 2, 3, 4, 5, 15, 30]
 print(f"Dataset downloaded to {path}")
