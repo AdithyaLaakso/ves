@@ -10,12 +10,13 @@ import shutil
 # Download latest version
 if len(sys.argv) > 1:
     path = sys.argv[1]
+    print(f"dataset sourced from {path}")
 else:
     path = kagglehub.dataset_download("vrushalipatel/handwritten-greek-characters-from-gcdb")
+    print(f"Dataset downloaded to {path}")
 
-number_of_images_per_letter = 10
-levels = [1, 2, 3, 4, 5, 15, 30]
-print(f"Dataset downloaded to {path}")
+number_of_images_per_letter = 1000
+levels = [i for i in range(1,31)]
 def generate_irregular_blobs(size, smooth_sigma=8, min_area=0, max_area= 1500000):
     """Generate large, sparse, overlapping blobs from random noise."""
     h, w = size
