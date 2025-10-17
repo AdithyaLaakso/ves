@@ -18,3 +18,4 @@ lightning_logs/
 data/
 image_cropping/assets/*
 ALPUB_v2/
+my_venv/

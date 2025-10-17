@@ -56,7 +56,7 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 
 segmentation_hyperparams = SegmentationHyperparams(
     num_epochs=20,
-    batch_size=256,
+    batch_size=8,
     learning_rate=7e-3,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
@@ -99,7 +99,7 @@ print_every_batches = 1
 
 save_every_epoch = True
 save_to = "./new.pth"
-load_from = "./start.pth"
+load_from = None
 display_from = save_to
 
 log_dir = "./logs/"
