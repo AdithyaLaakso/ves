@@ -442,42 +442,33 @@ def freeze_classification_branch(model):
     if hasattr(model, 'classifier'):
         for param in model.classifier.parameters():
             param.requires_grad = False
-        print(" Classification branch frozen")
-
-    for param in model.encoder.parameters():
-        param.requires_grad = True
-    for param in model.coarse_transformer.parameters():
-        param.requires_grad = True
-    for param in model.fine_transformer.parameters():
-        param.requires_grad = True
-    for param in model.decoder.parameters():
-        param.requires_grad = True
-
-    print(" Encoder, Transformers, and Decoder remain trainable")
+    print("Classification branch frozen")
     return model
 
 
 def freeze_segmentation_branch(model):
-    # Freeze the decoder
     for param in model.decoder.parameters():
         param.requires_grad = False
-    print("Decoder frozen")
+    print("Segmentation (decoder) frozen")
 
-    # Optionally freeze transformers too (they serve segmentation primarily)
+    # If transformers are specific to reconstruction
     for param in model.coarse_transformer.parameters():
         param.requires_grad = False
     for param in model.fine_transformer.parameters():
         param.requires_grad = False
-    print("Transformers frozen")
+    return model
 
-    # Keep encoder and classifier trainable
+
+def freeze_shared_branch(model):
     for param in model.encoder.parameters():
-        param.requires_grad = True
-    if hasattr(model, 'classifier'):
-        for param in model.classifier.parameters():
-            param.requires_grad = True
+        param.requires_grad = False
 
-    print("Encoder and Classifier remain trainable")
+    # Transformers are shared
+    for param in model.coarse_transformer.parameters():
+        param.requires_grad = False
+    for param in model.fine_transformer.parameters():
+        param.requires_grad = False
+    print("Transformers frozen (shared backbone)")
     return model
 
 def build_model(compile_model=False, load_from=None, device=settings.device):
@@ -492,12 +483,18 @@ def build_model(compile_model=False, load_from=None, device=settings.device):
         state_dict = torch.load(settings.load_from)
         model.load_state_dict(state_dict, strict=False)
 
+    if (
+        settings.freeze_class and
+        settings.freeze_shared and
+        settings.freeze_class
+    ):
+        print("bruh the entire model is froze btw ")
     if settings.freeze_class:
-        assert(not settings.freeze_recon)
         model = freeze_classification_branch(model)
     if settings.freeze_recon:
-        assert(not settings.freeze_class)
         model = freeze_segmentation_branch(model)
+    if settings.freeze_shared:
+        model = freeze_shared_branch(model)
 
     if compile_model:
         model = torch.compile(model, dynamic=True)

@@ -55,15 +55,15 @@ SegmentationHyperparams = namedtuple('SegmentationHyperparams', [
 ])
 
 segmentation_hyperparams = SegmentationHyperparams(
-    num_epochs=20,
-    batch_size=256,
-    learning_rate=7e-3,
+    num_epochs=5,
+    batch_size=200,
+    learning_rate=1e-4,
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
 
 
-learning_rate_gamma=1.1
+learning_rate_gamma=1.075
 
 num_workers=0
 persistent_workers=False
@@ -75,11 +75,13 @@ add_to_path = "../data/"
 # add_to_path = "../data/"
 
 track_levels = True
-levels = [[i for i in range(0,31)]]
+# levels = [[j for j in range(1, i+1)] for i in range (1,30)]
+levels = [[i for i in range(1, 31)]]
 # levels = [0]
 
-# display_levels = levels[0]
-display_levels = levels
+display_levels = levels[0]
+# display_levels = [i for i in range(0,31)]
+# display_levels = [0]
 
 image_size=128
 patch_sizes=(8, 32) # coarse, fine
@@ -88,7 +90,7 @@ in_channels=1
 out_channels=1
 embed_size=300
 num_blocks=15
-num_heads=10
+num_heads=15
 dropout=0.2
 input_size=128
 output_size=32
@@ -115,13 +117,14 @@ meta_c_weight = 1.0
 meta_m_weight = 0.0
 meta_s = 1.0
 
-freeze_class = False
+freeze_class = True
 freeze_recon = False
+freeze_shared = False
 
 loss_settings = LossSettings(
     dice_weight=0.0,
     mse_weight=1.0,
-    boundary_weight=0.1,
+    boundary_weight=0.000,
     focal_weight=10.0,
     class_weight=2.0,
     class_weight_delta=0.00000,
