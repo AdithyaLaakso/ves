@@ -36,9 +36,16 @@ To view the logs of a previous run:
 1. ```python -m tensorboard.main --logdir models/logs/example/ --port=6006```
 2. Navigate to localhost:6006 in your browser.
 
-To run inference visualizer on a saved model:
+To run inference visualizer on a saved model using the preset data:
 1. ```python letter_visualization_model/visualize_model.py example.pth```
 2. Arrow keys navigate between samples, 'q' exits
+
+
+To run inference visualizer on a saved model using your own sample:
+1. cp your saved model to ``` model/model.pth```
+2. ```cd model/usage/```
+3. ```python run_model.py path_to_your_input_image.png```
+4. Controls are the same as above
 
 Note: the model has only been tested on Linux. If there is interest in windows/OSX support, add an issue or contact on discord.
 
