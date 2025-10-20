@@ -3,10 +3,12 @@ from PIL import Image
 import math
 import json
 
+Image.MAX_IMAGE_PIXELS = 1000000000000000
+
 def crop(grid_size, file_name):
     paths_list = []
     base_name = Path(file_name).stem
-    output_folder = Path(f"image_cropping/assets/{base_name}_cropped")
+    output_folder = Path(f"{base_name}_cropped/")
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -36,13 +38,14 @@ def crop(grid_size, file_name):
                     else:
                         patch = img.crop((left, upper, right, lower))
 
+                    patch = patch.convert("L")
                     patch.save(output_path, 'BMP')
 
                     paths_list.append(str(output_path))
 
         json_data = {"paths": paths_list}
         json_file_path = output_folder / "paths.json"
-        
+
         with open(json_file_path, 'w') as f:
             json.dump(json_data, f, indent=4)
 
@@ -63,8 +66,6 @@ def delete(file_name):
         if json_file.exists():
              json_file.unlink()
 
-delete("image_cropping/assets/butterfly.png")
-crop(100, "image_cropping/assets/butterfly.png")
-
-delete("image_cropping/assets/sample_1.png")
-crop(100, "image_cropping/assets/sample_1.png")
+DATA_PATH = "./20231012184421.tif"
+delete(DATA_PATH)
+crop(10, DATA_PATH)

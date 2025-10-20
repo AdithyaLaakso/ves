@@ -33,7 +33,7 @@ The model will save the .pth to the specified location (default new.pth).
 The script will automatically start logging to the specified log directory (default logs/).
 
 To view the logs of a previous run:
-1. ```python -m tensorboard.main --logdir models/logs/example/ --port=6006```
+1. ```python -m tensorboard.main --logdir ./logs models/logs/example/ --port=6006```
 2. Navigate to localhost:6006 in your browser.
 
 To run inference visualizer on a saved model using the preset data:
