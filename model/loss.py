@@ -1,8 +1,12 @@
 import torch
 import torch.nn as nn
-from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torch.utils.tensorboard import SummaryWriter
 import settings
+
+try:
+    from torchmetrics.image import StructuralSimilarityIndexMeasure
+except ImportError:
+    StructuralSimilarityIndexMeasure = None
 
 epsilon = 1e-6
 
@@ -69,7 +73,9 @@ class MetaLoss(nn.Module):
             mean_c = self._running_stats["classification"]
             mean_total += mean_c
 
-        # if self.writer is not None and global_step is not None:
+        if self.writer is None:
+            return
+
         self.writer.add_scalar("Loss/Dice", mean_d / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/Boundary", mean_b / self.global_step, self.global_step)
         self.writer.add_scalar("Loss/Focal", mean_f / self.global_step, self.global_step)
@@ -89,7 +95,10 @@ class BinarySegmentationLoss(nn.Module):
         self.mse_weight = settings.loss_settings.mse_weight
         self.focal_alpha = settings.loss_settings.focal_alpha
         self.focal_gamma = settings.loss_settings.focal_gamma
-        self.mse_loss = StructuralSimilarityIndexMeasure(data_range=1.0).to(settings.device)
+        if StructuralSimilarityIndexMeasure is not None:
+            self.mse_loss = StructuralSimilarityIndexMeasure(data_range=1.0).to(settings.device)
+        else:
+            self.mse_loss = None
         self.d = nn.BCELoss()
 
     @torch.compile
@@ -100,11 +109,11 @@ class BinarySegmentationLoss(nn.Module):
         # Compute all losses
         boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
         focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
-        # boundary_val, focal_val, dice_val = (0, 0, 0)
         dice_val = dice_loss(pred_probs, target_masks, self.d) * self.dice_weight
-        boundary_val = boundary_loss(pred_probs, target_masks) * self.boundary_weight
-        focal_val = focal_loss(pred_probs, target_masks, self.focal_alpha, self.focal_gamma) * self.focal_weight
-        mse_val = (1-self.mse_loss(pred_probs, target_masks)) * self.mse_weight
+        if self.mse_loss is not None:
+            mse_val = (1 - self.mse_loss(pred_probs, target_masks)) * self.mse_weight
+        else:
+            mse_val = torch.nn.functional.mse_loss(pred_probs, target_masks) * self.mse_weight
 
         # dice_val = dice_val * dice_val
         # boundary_val = boundary_val * boundary_val * boundary_val

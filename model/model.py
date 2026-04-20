@@ -119,7 +119,7 @@ class Attention(nn.Module):
 
     def _ensure_bias(self, B, heads, N, device, dtype):
         if (self.global_bias is None) or (self.global_bias.shape[0] < N) or (self.global_bias.shape[1] < N):
-            size = max(N, 1024)  # avoid frequent re-allocs; cap can be larger if you like
+            size = N
             self.global_bias = nn.Parameter(torch.zeros(size, size, device=settings.device, dtype=dtype))
         return self.global_bias[:N, :N]
 
@@ -188,14 +188,19 @@ class SelfAttentionEncoderBlock(nn.Module):
         return x + self.mlp(self.ln2(x), grid_size)
 
     def forward(self, x, grid_size):
-        x = checkpoint(lambda inp: self._mlp_forward(inp, grid_size), x, use_reentrant=True)
-        x = checkpoint(self._attn_forward, x, use_reentrant=True)
+        if self.use_checkpoint:
+            x = checkpoint(lambda inp: self._mlp_forward(inp, grid_size), x, use_reentrant=True)
+            x = checkpoint(self._attn_forward, x, use_reentrant=True)
+        else:
+            x = self._mlp_forward(x, grid_size)
+            x = self._attn_forward(x)
         return x
 
 class MultiScaleDecoder(nn.Module):
     def __init__(self, embed_dim=32, out_chans=1):
         super().__init__()
         self.out_chans = out_chans
+        self.output_size = settings.output_size
 
         # Project coarse tokens -> coarse feature map
         self.coarse_proj = nn.Linear(embed_dim, out_chans)
@@ -221,7 +226,12 @@ class MultiScaleDecoder(nn.Module):
         coarse = self.coarse_proj(coarse_tokens)          # (B, Nc, C)
         coarse = coarse.view(B, Hc, Wc, self.out_chans)  # (B, Hc, Wc, C)
         coarse = coarse.permute(0, 3, 1, 2)              # (B, C, Hc, Wc)
-        coarse_up = F.interpolate(coarse, size=(32, 32), mode='bilinear', align_corners=True)
+        coarse_up = F.interpolate(
+            coarse,
+            size=(self.output_size, self.output_size),
+            mode='bilinear',
+            align_corners=True,
+        )
 
         # --- Fine branch ---
         fine_map = torch.zeros(B, self.out_chans, Hf, Wf, device=tokens.device, dtype=tokens.dtype)
@@ -236,7 +246,12 @@ class MultiScaleDecoder(nn.Module):
                 row, col = divmod(pos.item(), Wf)
                 fine_map[b, :, row, col] = fine_feats[k]
 
-        fine_up = F.interpolate(fine_map, size=(32, 32), mode='bilinear', align_corners=True)
+        fine_up = F.interpolate(
+            fine_map,
+            size=(self.output_size, self.output_size),
+            mode='bilinear',
+            align_corners=True,
+        )
 
         # --- Fuse coarse + fine ---
         fused = torch.cat([coarse_up, fine_up], dim=1)  # (B, 2C, 32, 32)
@@ -298,7 +313,7 @@ class SimpleEncoderBlock(nn.Module):
         return x
 
 class VisionTransformerForSegmentationMultiScale(nn.Module):
-    def __init__(self, use_gradient_checkpointing=settings.use_gradient, num_classes=25):
+    def __init__(self, use_gradient_checkpointing=settings.use_gradient, num_classes=settings.num_classes):
         super().__init__()
         # read settings with sensible fallbacks
         self.output_size = settings.output_size
@@ -368,7 +383,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Decode segmentation map
         out = self.decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
-        out = F.interpolate(out, size=(32, 32), mode="bilinear")
+        out = F.interpolate(out, size=(self.output_size, self.output_size), mode="bilinear")
 
         if settings.mode == settings.MULTITASK:
             label = self.classifier(processed_tokens, out, x)  # <-- pass both
@@ -472,7 +487,10 @@ def freeze_shared_branch(model):
     return model
 
 def build_model(compile_model=False, load_from=None, device=settings.device):
-    model = VisionTransformerForSegmentationMultiScale(use_gradient_checkpointing=settings.use_gradient)
+    model = VisionTransformerForSegmentationMultiScale(
+        use_gradient_checkpointing=settings.use_gradient,
+        num_classes=settings.num_classes,
+    )
 
     if load_from is not None:
         print(f"loading from: {load_from}")
