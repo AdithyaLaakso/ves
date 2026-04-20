@@ -45,15 +45,18 @@ else:
 
 model = build_model(load_from=load_from)
 
-# Preprocessing: Resize to 128x128 and ensure tensor format
+# Preprocessing: Resize to the configured input size and ensure tensor format
 preprocess = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),  # Convert to 1 channel
-    transforms.Resize((128, 128)),
+    transforms.Resize((settings.input_size, settings.input_size)),
     transforms.ToTensor(),
 ])
 
 # Resize outputs for easier viewing
-resize_for_display = transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.NEAREST)
+resize_for_display = transforms.Resize(
+    (settings.input_size, settings.input_size),
+    interpolation=transforms.InterpolationMode.NEAREST,
+)
 
 # Loop over samples
 shown_letters = set()
@@ -71,18 +74,22 @@ if settings.track_levels:
         clean_img = Image.open(clean_path).convert("RGB")
 
         # Prepare input tensor
-        input_tensor = preprocess(noisy_img).unsqueeze(0).to(device)  # Shape: [1, 3, 128, 128]
+        input_tensor = preprocess(noisy_img).unsqueeze(0).to(device)
 
         # Pad to 8 channels if needed
         if input_tensor.shape[1] == 3:
-            pad = torch.zeros((1, 5, 128, 128), dtype=input_tensor.dtype, device=input_tensor.device)
+            pad = torch.zeros(
+                (1, 5, settings.input_size, settings.input_size),
+                dtype=input_tensor.dtype,
+                device=input_tensor.device,
+            )
             input_tensor = torch.cat([input_tensor, pad], dim=1)
 
         # Model inference
         with torch.no_grad():
             output, labels = model(input_tensor)
 
-        output = output.squeeze(0).squeeze(0).cpu()  # [1, 1, 32, 32] -> [32, 32]
+        output = output.squeeze(0).squeeze(0).cpu()
         # output = (output > 0.5).int()
         output_img = transforms.ToPILImage()(output)
         output_img = resize_for_display(output_img)
@@ -124,18 +131,22 @@ else:
         clean_img = Image.open(settings.add_to_path + clean_path).convert("RGB")
 
         # Prepare input tensor
-        input_tensor = preprocess(noisy_img).unsqueeze(0).to(device)  # Shape: [1, 3, 128, 128]
+        input_tensor = preprocess(noisy_img).unsqueeze(0).to(device)
 
         # Pad to 8 channels if needed
         if input_tensor.shape[1] == 3:
-            pad = torch.zeros((1, 5, 128, 128), dtype=input_tensor.dtype, device=input_tensor.device)
+            pad = torch.zeros(
+                (1, 5, settings.input_size, settings.input_size),
+                dtype=input_tensor.dtype,
+                device=input_tensor.device,
+            )
             input_tensor = torch.cat([input_tensor, pad], dim=1)
 
         # Model inference
         with torch.no_grad():
             output, _ = model(input_tensor)
 
-        output = output.squeeze(0).squeeze(0).cpu()  # [1, 1, 32, 32] -> [32, 32]
+        output = output.squeeze(0).squeeze(0).cpu()
         # output = (output > 0.5).int()
         output_img = transforms.ToPILImage()(output)
         output_img = resize_for_display(output_img)

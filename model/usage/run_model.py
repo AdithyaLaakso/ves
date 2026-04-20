@@ -26,12 +26,15 @@ def run_model(input_folder_str):
 
     preprocess = transforms.Compose([
         transforms.Grayscale(num_output_channels=1),
-        transforms.Resize((128, 128)),
+        transforms.Resize((settings.input_size, settings.input_size)),
         transforms.ToTensor(),
     ])
 
     # Resize outputs for easier viewing
-    resize_for_display = transforms.Resize((128, 128), interpolation=transforms.InterpolationMode.NEAREST)
+    resize_for_display = transforms.Resize(
+        (settings.input_size, settings.input_size),
+        interpolation=transforms.InterpolationMode.NEAREST,
+    )
 
     try:
         input_img = Image.open(input_folder_str).convert("RGB")

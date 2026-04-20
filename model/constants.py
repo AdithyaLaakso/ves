@@ -1,5 +1,3 @@
-import torch
-
 greek_letters = {
     "ALPHA": 0,
     "BETA": 1,
@@ -7,23 +5,43 @@ greek_letters = {
     "DELTA": 3,
     "EPSILON": 4,
     "ZETA": 5,
-    "HETA": 6,
+    "ETA": 6,
     "THETA": 7,
     "IOTA": 8,
-    "KAPA": 9,
-    "LAMDA": 10,
-    "MI": 11,
-    "NI": 12,
+    "KAPPA": 9,
+    "LAMBDA": 10,
+    "MU": 11,
+    "NU": 12,
     "XI": 13,
-    "KSI": 13,
-    "OMIKRON": 14,
-    "PII": 15,
-    "RO": 16,
-    "SIGMA": 17,
+    "OMICRON": 14,
+    "PI": 15,
+    "RHO": 16,
+    "LUNATE_SIGMA": 17,
     "TAU": 18,
-    "YPSILON": 19,
-    "FI": 20,
+    "UPSILON": 19,
+    "PHI": 20,
     "CHI": 21,
     "PSI": 22,
     "OMEGA": 23,
 }
+
+
+greek_letter_aliases = {
+    "HETA": "ETA",
+    "KAPA": "KAPPA",
+    "LAMDA": "LAMBDA",
+    "MI": "MU",
+    "NI": "NU",
+    "KSI": "XI",
+    "OMIKRON": "OMICRON",
+    "PII": "PI",
+    "RO": "RHO",
+    "SIGMA": "LUNATE_SIGMA",
+    "YPSILON": "UPSILON",
+    "FI": "PHI",
+}
+
+
+def canonicalize_label(label: str) -> str:
+    upper = label.upper()
+    return greek_letter_aliases.get(upper, upper)
