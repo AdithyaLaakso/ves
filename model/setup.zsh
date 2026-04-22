@@ -10,23 +10,6 @@ setopt NULL_GLOB
 commit_hash=$(git rev-parse --short HEAD)
 
 # sudo nvidia-smi -caa
-# ----------------------------
-# CPU / OpenMP / MKL settings
-# ----------------------------
-export VES_SMOKE_TEST="${VES_SMOKE_TEST:-1}"
-export VES_FORCE_CPU="${VES_FORCE_CPU:-1}"
-export VES_SIZE_PROFILE="${VES_SIZE_PROFILE:-96}"
-export VES_NUM_EPOCHS="${VES_NUM_EPOCHS:-1}"
-export VES_BATCH_SIZE="${VES_BATCH_SIZE:-4}"
-export VES_MAX_SIZE="${VES_MAX_SIZE:-64}"
-export VES_NUM_WORKERS="${VES_NUM_WORKERS:-0}"
-export VES_TORCH_THREADS="${VES_TORCH_THREADS:-2}"
-export VES_TORCH_INTEROP_THREADS="${VES_TORCH_INTEROP_THREADS:-1}"
-export VES_RUN_TENSORBOARD="${VES_RUN_TENSORBOARD:-0}"
-export VES_RUN_VISUALIZE="${VES_RUN_VISUALIZE:-0}"
-export VES_WARN_TIMEOUT="${VES_WARN_TIMEOUT:-600}"
-export VES_HARD_TIMEOUT="${VES_HARD_TIMEOUT:-1200}"
-
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}"                 # Match to number of physical cores (adjust to your CPU)
 export OMP_SCHEDULE=STATIC                # Static scheduling for uniform workloads
 export OMP_PROC_BIND=CLOSE                # Bind threads close to master for cache locality
@@ -109,7 +92,67 @@ print(f"Using Python: {sys.executable}")
 print(f"PyTorch: {torch.__version__}")
 PY
 
+cuda_available="$("$python_bin" - <<'PY'
+import torch
+print("1" if torch.cuda.is_available() else "0")
+PY
+)"
+
+# ----------------------------
+# Run-mode defaults
+# ----------------------------
+if [ -z "${VES_FORCE_CPU+x}" ]; then
+	if [ "$cuda_available" = "1" ]; then
+		export VES_FORCE_CPU=0
+	else
+		export VES_FORCE_CPU=1
+	fi
+fi
+
+if [ -z "${VES_SMOKE_TEST+x}" ]; then
+	if [ "$VES_FORCE_CPU" = "1" ]; then
+		export VES_SMOKE_TEST=1
+	else
+		export VES_SMOKE_TEST=0
+	fi
+fi
+
+export VES_SIZE_PROFILE="${VES_SIZE_PROFILE:-96}"
+export VES_NUM_EPOCHS="${VES_NUM_EPOCHS:-1}"
+if [ -z "${VES_BATCH_SIZE+x}" ]; then
+	if [ "$VES_SMOKE_TEST" = "1" ]; then
+		export VES_BATCH_SIZE=4
+	else
+		export VES_BATCH_SIZE=16
+	fi
+fi
+if [ -z "${VES_MAX_SIZE+x}" ]; then
+	if [ "$VES_SMOKE_TEST" = "1" ]; then
+		export VES_MAX_SIZE=64
+	else
+		export VES_MAX_SIZE=2048
+	fi
+fi
+export VES_NUM_WORKERS="${VES_NUM_WORKERS:-0}"
+export VES_TORCH_THREADS="${VES_TORCH_THREADS:-2}"
+export VES_TORCH_INTEROP_THREADS="${VES_TORCH_INTEROP_THREADS:-1}"
+export VES_RUN_TENSORBOARD="${VES_RUN_TENSORBOARD:-0}"
+export VES_RUN_VISUALIZE="${VES_RUN_VISUALIZE:-0}"
+export VES_WARN_TIMEOUT="${VES_WARN_TIMEOUT:-600}"
+export VES_HARD_TIMEOUT="${VES_HARD_TIMEOUT:-1200}"
+
 echo "VES size profile: ${VES_SIZE_PROFILE}"
+echo "CUDA available: ${cuda_available}"
+echo "Run mode: FORCE_CPU=${VES_FORCE_CPU} SMOKE_TEST=${VES_SMOKE_TEST} NUM_EPOCHS=${VES_NUM_EPOCHS} BATCH_SIZE=${VES_BATCH_SIZE} MAX_SIZE=${VES_MAX_SIZE} RUN_VISUALIZE=${VES_RUN_VISUALIZE}"
+if [ "$VES_FORCE_CPU" = "1" ]; then
+	echo "Running in CPU mode. Set VES_FORCE_CPU=0 to allow GPU execution."
+fi
+if [ "$VES_SMOKE_TEST" = "1" ]; then
+	echo "Smoke-test mode is enabled. Set VES_SMOKE_TEST=0 for a larger validation run."
+fi
+if [ "$VES_RUN_VISUALIZE" != "1" ]; then
+	echo "Visualization is disabled. Set VES_RUN_VISUALIZE=1 to open the visualizer after training."
+fi
 
 if [ "$VES_RUN_TENSORBOARD" = "1" ]; then
 	killall tensorboard 2>/dev/null || true
