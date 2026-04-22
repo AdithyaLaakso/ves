@@ -15,6 +15,7 @@ commit_hash=$(git rev-parse --short HEAD)
 # ----------------------------
 export VES_SMOKE_TEST="${VES_SMOKE_TEST:-1}"
 export VES_FORCE_CPU="${VES_FORCE_CPU:-1}"
+export VES_SIZE_PROFILE="${VES_SIZE_PROFILE:-96}"
 export VES_NUM_EPOCHS="${VES_NUM_EPOCHS:-1}"
 export VES_BATCH_SIZE="${VES_BATCH_SIZE:-4}"
 export VES_MAX_SIZE="${VES_MAX_SIZE:-64}"
@@ -107,6 +108,8 @@ except Exception as exc:
 print(f"Using Python: {sys.executable}")
 print(f"PyTorch: {torch.__version__}")
 PY
+
+echo "VES size profile: ${VES_SIZE_PROFILE}"
 
 if [ "$VES_RUN_TENSORBOARD" = "1" ]; then
 	killall tensorboard 2>/dev/null || true

@@ -48,6 +48,30 @@ def _env_int(name: str, default: int) -> int:
     return int(raw)
 
 
+def _size_profile():
+    profile = os.getenv("VES_SIZE_PROFILE", "96").strip().lower()
+    presets = {
+        "64": {"image_size": 64, "input_size": 64, "output_size": 16, "patch_sizes": (8, 16)},
+        "96": {"image_size": 96, "input_size": 96, "output_size": 24, "patch_sizes": (8, 24)},
+        "128": {"image_size": 128, "input_size": 128, "output_size": 32, "patch_sizes": (8, 32)},
+    }
+
+    if profile not in presets:
+        raise ValueError(
+            f"Unsupported VES_SIZE_PROFILE={profile!r}; expected one of {sorted(presets)}"
+        )
+
+    config = dict(presets[profile])
+    config["image_size"] = _env_int("VES_IMAGE_SIZE", config["image_size"])
+    config["input_size"] = _env_int("VES_INPUT_SIZE", config["input_size"])
+    config["output_size"] = _env_int("VES_OUTPUT_SIZE", config["output_size"])
+    coarse = _env_int("VES_COARSE_PATCH_SIZE", config["patch_sizes"][0])
+    fine = _env_int("VES_FINE_PATCH_SIZE", config["patch_sizes"][1])
+    config["patch_sizes"] = (coarse, fine)
+    config["profile"] = profile
+    return config
+
+
 def _select_device() -> torch.device:
     requested = os.getenv("VES_DEVICE")
     if requested:
@@ -114,16 +138,17 @@ display_levels = levels[0] if levels else [0]
 split_by_document = True
 sampler_strategy = "document_inv_sqrt"
 
-image_size = 96
-patch_sizes = (8, 24)  # coarse, fine
+size_profile = _size_profile()
+image_size = size_profile["image_size"]
+patch_sizes = size_profile["patch_sizes"]  # coarse, fine
 in_channels = 1
 out_channels = 1
 embed_size = 300
 num_blocks = 15
 num_heads = 15
 dropout = 0.2
-input_size = 96
-output_size = 24
+input_size = size_profile["input_size"]
+output_size = size_profile["output_size"]
 use_gradient = not smoke_test
 
 letters = tuple(constants.greek_letters.keys())
@@ -166,6 +191,16 @@ loss_settings = LossSettings(
 
 print(loss_settings)
 print(segmentation_hyperparams)
+print(
+    "size profile:",
+    size_profile["profile"],
+    {
+        "image_size": image_size,
+        "input_size": input_size,
+        "output_size": output_size,
+        "patch_sizes": patch_sizes,
+    },
+)
 
 
 def load_manifest_metadata() -> dict:
