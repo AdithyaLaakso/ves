@@ -1,0 +1,44 @@
+Transfer Evaluation Note
+
+The glossary definition of transfer is not enough by itself. The paper should also describe, at least in outline, how transfer is to be tested under changed conditions.
+
+Suggested staged transfer-evaluation plan:
+
+1. Internal generalization test
+
+- Train on the curated uncial regime.
+- Evaluate on held-out documents from the same corpus.
+- Purpose: show that the model learned something beyond memorization.
+
+2. Stress-test transfer
+
+- Apply the trained model to conditions that are harder than the training set but still somewhat interpretable.
+- Examples:
+  - more severe degradation
+  - altered contrast
+  - noisier backgrounds
+  - partial or fragmentary letterforms
+- Purpose: test whether performance collapses immediately under moderate domain shift.
+
+3. Scroll-like transfer test
+
+- Run tiled inference on genuinely novel grayscale material closer to virtually unwrapped papyrus conditions.
+- Evaluate not by loss alone, but by:
+  - coherence of outputs
+  - stability across nearby tiles or reruns
+  - whether candidate forms survive expert inspection
+  - whether outputs appear less artifact-driven than baseline methods
+- Purpose: test whether learned behavior remains useful in conditions closer to the actual target problem.
+
+4. Real-task test
+
+- Ask whether any outputs contribute to partial legibility on novel scroll material.
+- This is not yet full prize-level success, but it is the strongest available evidence below that threshold.
+
+Paper-usable paragraph:
+
+The value of the present proxy task depends on transfer rather than proxy performance alone. For that reason, evaluation should proceed in stages. First, the model must show generalization within the curated uncial regime through held-out document-level testing. Second, it should be exposed to harder stress-test conditions that increase degradation and background difficulty. Third, it should be tested on genuinely novel grayscale material closer to virtually unwrapped papyrus conditions. The decisive question is not whether the model performs well only on its training proxy, but whether any of the learned behavior remains useful as the task moves toward the real target domain.
+
+Additional paper sentence:
+
+Evidence of transfer should be treated as cumulative rather than binary, including stable behavior on held-out documents, robustness under harsher image conditions, and the emergence of less artifact-driven partial legibility on novel grayscale material.

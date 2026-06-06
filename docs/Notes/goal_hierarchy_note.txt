@@ -1,0 +1,16 @@
+Goal Hierarchy Note
+
+Final success should be defined by an externally meaningful threshold rather than by internal model metrics alone. In the present context, the clearest ultimate goal is a reading sufficient to satisfy the current contest threshold, presently understood as at least 10 legible letters or an equivalent recognized result.
+
+This suggests a hierarchy of goals:
+
+1. Final success
+   A result sufficient to satisfy the current contest threshold, presently understood as at least 10 legible letters or an equivalent recognized reading.
+
+2. Strong intermediate success
+   Repeated, defensible partial legibility on real scroll material that appears stable, reproducible, and not artifact-driven.
+
+3. Weak intermediate success
+   Improved coherence, stability, or plausibility that may justify further testing, but does not yet amount to reading.
+
+This hierarchy is useful because it keeps the project from confusing lower loss, cleaner-looking outputs, or more visually appealing artifacts with actual success. It also provides a more disciplined way to discuss progress below the prize threshold without pretending that such progress is easy to capture in a single scalar metric.

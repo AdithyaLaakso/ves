@@ -1,0 +1,29 @@
+Proxy Task Versus Real Scroll Reading Note
+
+The decisive test of the present approach is not performance on curated exemplars, but whether any of the learned behavior transfers to novel grayscale imagery derived from digitally unwrapped papyrus. That task is substantially harder than the present training regime.
+
+The current training corpus contains recognizable uncial forms. Real scroll imagery may contain only faint, partial, and ambiguous traces embedded in complex substrate structure. The gap is therefore not small. It includes at least:
+
+- letter isolation versus embedded faint traces
+- curated exemplars versus ambiguous signal
+- known labels versus uncertain interpretation
+- comparatively simple backgrounds versus papyrus substrate complexity
+- local reconstruction performance versus genuine textual reading
+
+For that reason, the current pipeline should be understood as a proxy training regime rather than as a near-direct simulation of the final task. Its value depends entirely on whether it contributes to transfer under much harsher real-image conditions.
+
+This framing matters methodologically. The model may still be worth refining, but the ultimate benchmark is not whether it performs well on the proxy task alone. The ultimate benchmark is whether it can "sight read" novel grayscale text from digitally unwrapped papyrus and detect real ink signal under conditions that are likely far more difficult than anything represented in the present supervised corpus.
+
+Accordingly, the work should be understood as proceeding along two related tracks:
+
+1. Improve the proxy task:
+   - better morphology priors
+   - better background realism
+   - stronger transfer-oriented augmentation
+   - more defensible validation
+
+2. Move closer to the real task:
+   - tiled inference on real grayscale scroll imagery
+   - human inspection of outputs
+   - repeated testing on novel material
+   - eventually, if possible, a regime closer to weak supervision or direct transfer on real slices

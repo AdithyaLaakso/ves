@@ -1,0 +1,17 @@
+Virtual Unwrap Limitation Note
+
+An additional uncertainty is that virtually unwrapped surfaces may introduce artifacts or distortions not yet fully anticipated here. Such surfaces are not simply digital equivalents of physically opened material; they may alter local geometry, continuity, contrast, or substrate appearance in ways that complicate both human interpretation and model-based detection.
+
+Possible categories of concern include:
+
+- geometric distortions introduced by the unwrapping process
+- interpolation artifacts
+- loss of local surface context
+- altered appearance of faint ink traces after flattening
+- segmentation or reconstruction errors in the volumetric pipeline
+- ambiguity caused by layered, damaged, or overlapping substrate structure
+- apparent discontinuities in strokes that arise from reconstruction rather than from the original writing
+
+The important methodological point is not that all such failure modes can already be specified in detail, but that they should be expected. A virtually unwrapped surface is not merely a neutral presentation layer. It may introduce its own forms of uncertainty, and some of those may only become visible when the model is tested on genuinely novel unwrapped material rather than on curated exemplars.
+
+For that reason, good performance on the proxy training task should not be treated as direct evidence that the same approach will transfer cleanly to the virtual-unwrapping setting. The possibility of unanticipated failure modes is itself part of the problem definition.

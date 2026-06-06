@@ -1,0 +1,15 @@
+Defining Success Below Prize Threshold
+
+The final criterion of success is comparatively clear: enough genuine legibility to satisfy an externally meaningful threshold, such as a current prize condition involving readable letters or a chapter title. What is more difficult is defining progress below that level.
+
+Below the prize threshold, "success" should not be treated as a single scalar metric. It is better understood as a combination of indicators, including:
+
+- the emergence of more coherent local forms
+- greater stability across held-out material
+- improved human interpretability
+- reduced dependence on isolated or non-reproducible artifacts
+- signs of partial legibility that are not merely aesthetic or wishful readings
+
+This means that intermediate improvement is necessarily provisional. Lower loss values, cleaner-looking outputs, or isolated plausible glyphs may all be encouraging, but none is sufficient by itself. Stronger intermediate evidence would involve repeatable candidate forms, consistency across neighboring patches or slices, and outputs that informed readers judge to be directionally meaningful rather than artifact-driven.
+
+In this sense, progress below the prize threshold is best treated as the accumulation of evidence rather than as a single decisive benchmark. Such evidence does not constitute proof of reading, but it can help distinguish mere visual plausibility from movement toward genuine legibility.

@@ -1,0 +1,16 @@
+Grayscale-Only Limitation Note
+
+An additional limitation is that the present computational setting may rely primarily on grayscale imagery, whereas successful human reading practices may benefit from comparing multiple visual presentations of the same material, including differently processed or differently imaged views.
+
+This matters because cross-image comparison can help separate:
+
+- real ink signal
+- substrate texture
+- lighting or contrast artifacts
+- ambiguous edge effects
+
+If that comparative leverage is unavailable, both human and model-based interpretation become more fragile. Candidate readings have fewer independent checks against substrate artifacts and other sources of ambiguity. In practical terms, this raises the evidentiary bar for any apparent success.
+
+This is therefore not merely a matter of image format. It affects how confidence is built. A grayscale-only workflow may make it harder to confirm that a candidate reading is real rather than artifact-driven, especially when the signal is faint and the underlying substrate is visually complex.
+
+For that reason, any apparent improvement in model output under grayscale-only conditions should be interpreted cautiously. The absence of multiple image modalities or multiple comparable renderings limits the ability to confirm partial legibility by cross-comparison, which in turn makes both success claims and intermediate progress harder to evaluate securely.

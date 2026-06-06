@@ -1,0 +1,27 @@
+Why Anvil and Big Red 200 Both Require Sponsorship or Allocation, but Anvil Is Still the Better Near-Term Target
+
+Neither Purdue Anvil nor IU Big Red 200 is a casual self-signup path for outside research use.
+
+Anvil:
+
+- Access is governed through the ACCESS allocation system.
+- In practice, a user either needs to submit an ACCESS allocation request or be added to an existing project by a PI.
+- That means Anvil is not simply "open access" in the ordinary sense. It still depends on project approval, allocation, and often PI involvement.
+
+Big Red 200:
+
+- Access is governed through Indiana University account and sponsorship rules.
+- IU graduate students, faculty, and staff can obtain access through IU procedures.
+- Undergraduates need sponsorship by full-time IU faculty or staff.
+- For non-IU participants, the path is less straightforward and usually depends on institutional sponsorship or collaboration.
+
+Why Anvil is still the stronger near-term target:
+
+- Anvil is part of the national ACCESS ecosystem, so it is designed for external research allocation requests in a way that is easier to explain and defend outside one home institution.
+- The project already has a bounded pilot rationale that fits Anvil well: one modern GPU, limited subset training, timing and loss measurements, checkpoints, and a short evaluation report.
+- The access logic for Anvil aligns naturally with a faculty-backed pilot request. That makes it a better fit for an externally justified compute ask than a more institution-internal system such as Big Red 200.
+- Big Red 200 remains a credible fallback, but it is strongest when an IU-affiliated sponsor is already in place. Without that, it is less immediately actionable.
+
+Bottom line:
+
+Both systems require some form of sponsorship, project approval, or institutional backing. The difference is not that Anvil is effortless and Big Red 200 is not. The difference is that Anvil is better aligned with a portable, faculty-backed, externally justifiable pilot allocation request, while Big Red 200 is more dependent on IU-specific institutional relationships.
