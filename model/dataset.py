@@ -1,7 +1,6 @@
 import json
 import random
 from collections import defaultdict
-from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -16,6 +15,62 @@ import settings
 
 DATA_PATH = settings.data_path
 MAX_SIZE = settings.max_size
+
+
+class DatasetPreflightError(RuntimeError):
+    pass
+
+
+def preflight_manifest(
+    manifest_path: Path,
+    root: Optional[Path] = None,
+    min_loadable: int = 1,
+    fail_on_missing: bool = True,
+    max_missing_examples: int = 5,
+) -> Dict:
+    manifest_path = Path(manifest_path)
+    root = Path(root) if root is not None else Path(settings.add_to_path)
+
+    with manifest_path.open("r", encoding="utf-8") as f:
+        raw_data = json.load(f)
+
+    records = raw_data.get("records", [])
+    label_counts = defaultdict(int)
+    missing_examples = []
+    loadable_records = 0
+
+    for item in records:
+        raw_label = item.get("label")
+        if raw_label is not None:
+            label_counts[constants.canonicalize_label(raw_label)] += 1
+
+        rel_path = item.get("path")
+        if rel_path and (root / rel_path).exists():
+            loadable_records += 1
+        elif len(missing_examples) < max_missing_examples:
+            missing_examples.append(rel_path)
+
+    report = {
+        "manifest_path": str(manifest_path),
+        "total_records": len(records),
+        "loadable_records": loadable_records,
+        "missing_records": len(records) - loadable_records,
+        "missing_examples": missing_examples,
+        "class_count": len(label_counts),
+    }
+
+    if loadable_records < min_loadable:
+        raise DatasetPreflightError(
+            f"Manifest preflight failed: {loadable_records} loadable records "
+            f"below required minimum {min_loadable}."
+        )
+    if fail_on_missing and report["missing_records"]:
+        raise DatasetPreflightError(
+            f"Manifest preflight failed: {report['missing_records']} missing records. "
+            f"Examples: {missing_examples}"
+        )
+
+    return report
 
 
 class SegData(Dataset):
@@ -40,6 +95,21 @@ class SegData(Dataset):
         if settings.data_format == "manifest" or (
             settings.data_format == "auto" and "records" in raw_data
         ):
+            report = preflight_manifest(
+                self.data_path,
+                root=Path(settings.add_to_path),
+                min_loadable=settings.min_dataset_size,
+                fail_on_missing=False,
+            )
+            print(
+                "manifest preflight:",
+                {
+                    "total_records": report["total_records"],
+                    "loadable_records": report["loadable_records"],
+                    "missing_records": report["missing_records"],
+                    "class_count": report["class_count"],
+                },
+            )
             records = self._load_manifest_records(raw_data)
             metadata = {
                 "type": "manifest",
@@ -56,7 +126,8 @@ class SegData(Dataset):
         if MAX_SIZE is None or len(records) <= MAX_SIZE:
             return records
 
-        idx = np.random.choice(len(records), MAX_SIZE, replace=False)
+        rng = np.random.default_rng(settings.seed)
+        idx = rng.choice(len(records), MAX_SIZE, replace=False)
         return [records[i] for i in idx]
 
     def _load_manifest_records(self, raw_data: Dict) -> List[Dict]:
@@ -217,18 +288,18 @@ class SegData(Dataset):
         return input_tensor, label
 
 
-def collate_fn(batch, device="cuda"):
+def collate_fn(batch):
     inputs, labels = zip(*batch)
-    inputs = torch.stack(inputs).to(device)
+    inputs = torch.stack(inputs)
 
     if isinstance(labels[0], int):
-        labels = torch.tensor(labels, dtype=torch.long, device=device)
+        labels = torch.tensor(labels, dtype=torch.long)
         return inputs, labels
 
     if isinstance(labels[0], tuple):
         masks, class_labels = zip(*labels)
-        masks = torch.stack(masks).to(device)
-        class_labels = torch.tensor(class_labels, dtype=torch.long, device=device)
+        masks = torch.stack(masks)
+        class_labels = torch.tensor(class_labels, dtype=torch.long)
         return inputs, (masks, class_labels)
 
     raise TypeError(f"Unexpected label type: {type(labels[0])}")
@@ -239,17 +310,17 @@ def create_loader(
     batch_size=32,
     shuffle=True,
     sampler=None,
-    device=settings.device,
     num_workers=settings.num_workers,
 ):
+    pin_memory = settings.device.type == "cuda"
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle if sampler is None else False,
         sampler=sampler,
         num_workers=num_workers,
-        collate_fn=partial(collate_fn, device=device),
-        pin_memory=False,
+        collate_fn=collate_fn,
+        pin_memory=pin_memory,
         persistent_workers=settings.persistent_workers,
     )
 

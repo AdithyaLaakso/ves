@@ -8,6 +8,8 @@ setopt NULL_GLOB
 # fi
 
 commit_hash=$(git rev-parse --short HEAD)
+run_id="${VES_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$commit_hash}"
+export VES_RUN_DIR="${VES_RUN_DIR:-./runs/$run_id}"
 
 # sudo nvidia-smi -caa
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}"                 # Match to number of physical cores (adjust to your CPU)
@@ -16,13 +18,20 @@ export OMP_PROC_BIND=CLOSE                # Bind threads close to master for cac
 export GOMP_CPU_AFFINITY="0-2"          # Pin threads to cores 0-19
 export KMP_AFFINITY=granularity=fine,compact,1,0  # Fine granularity, compact placement
 export KMP_BLOCKTIME=0                    # Threads sleep immediately when idle (better for GPU-heavy loops)
-export CUDA_LAUNCH_BLOCKING=1
+export VES_DEBUG_CUDA="${VES_DEBUG_CUDA:-0}"
+if [ "$VES_DEBUG_CUDA" = "1" ]; then
+	export CUDA_LAUNCH_BLOCKING="${CUDA_LAUNCH_BLOCKING:-1}"
+	export TORCHDYNAMO_VERBOSE="${TORCHDYNAMO_VERBOSE:-1}"
+else
+	export CUDA_LAUNCH_BLOCKING="${CUDA_LAUNCH_BLOCKING:-0}"
+	export TORCHDYNAMO_VERBOSE="${TORCHDYNAMO_VERBOSE:-0}"
+fi
 
 # ----------------------------
 # PyTorch / CUDA settings
 # ----------------------------
 export PYTORCH_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_mb:128,expandable_segments:True
-export TORCH_DISABLE_TF32_LEGACY_API=1
+export VES_ALLOW_TF32="${VES_ALLOW_TF32:-1}"
 
 # ----------------------------
 # Optional PyTorch tuning
@@ -34,29 +43,11 @@ export CUDNN_BENCHMARK=1
 # ----------------------------
 # export TORCH_TRACE=./logs.txt
 # export TORCH_LOGS=
-export TORCHDYNAMO_VERBOSE=1
 # export TORCH_COMPILE_DEBUG=
 export PYTHONFAULTHANDLER=1
 
-mkdir -p checkpoints/ checkpoints_archive/
-checkpoint_files=(checkpoints/*)
-if (( ${#checkpoint_files[@]} )); then
-	mv -f $checkpoint_files checkpoints_archive/
-	rm -rf $checkpoint_files
-fi
-
-mkdir -p logs_archive/
-log_files=(logs/*)
-if (( ${#log_files[@]} )); then
-	mv -f $log_files logs_archive/
-fi
-stamp_files=(*.stamp)
-if (( ${#stamp_files[@]} )); then
-	rm -f $stamp_files
-fi
-
-file_name=$commit_hash".stamp"
-touch $file_name
+mkdir -p "$VES_RUN_DIR/checkpoints" "$VES_RUN_DIR/logs"
+touch "$VES_RUN_DIR/$commit_hash.stamp"
 
 if [ -n "${PYTHON_BIN:-}" ]; then
 	python_bin="$PYTHON_BIN"
@@ -139,11 +130,18 @@ export VES_TORCH_INTEROP_THREADS="${VES_TORCH_INTEROP_THREADS:-1}"
 export VES_RUN_TENSORBOARD="${VES_RUN_TENSORBOARD:-0}"
 export VES_RUN_VISUALIZE="${VES_RUN_VISUALIZE:-0}"
 export VES_WARN_TIMEOUT="${VES_WARN_TIMEOUT:-600}"
-export VES_HARD_TIMEOUT="${VES_HARD_TIMEOUT:-1200}"
+if [ -z "${VES_HARD_TIMEOUT+x}" ]; then
+	if [ "$VES_SMOKE_TEST" = "1" ]; then
+		export VES_HARD_TIMEOUT=1200
+	else
+		export VES_HARD_TIMEOUT=0
+	fi
+fi
 
 echo "VES size profile: ${VES_SIZE_PROFILE}"
+echo "VES run dir: ${VES_RUN_DIR}"
 echo "CUDA available: ${cuda_available}"
-echo "Run mode: FORCE_CPU=${VES_FORCE_CPU} SMOKE_TEST=${VES_SMOKE_TEST} NUM_EPOCHS=${VES_NUM_EPOCHS} BATCH_SIZE=${VES_BATCH_SIZE} MAX_SIZE=${VES_MAX_SIZE} RUN_VISUALIZE=${VES_RUN_VISUALIZE}"
+echo "Run mode: FORCE_CPU=${VES_FORCE_CPU} SMOKE_TEST=${VES_SMOKE_TEST} NUM_EPOCHS=${VES_NUM_EPOCHS} BATCH_SIZE=${VES_BATCH_SIZE} MAX_SIZE=${VES_MAX_SIZE} RUN_VISUALIZE=${VES_RUN_VISUALIZE} DEBUG_CUDA=${VES_DEBUG_CUDA} HARD_TIMEOUT=${VES_HARD_TIMEOUT}"
 if [ "$VES_FORCE_CPU" = "1" ]; then
 	echo "Running in CPU mode. Set VES_FORCE_CPU=0 to allow GPU execution."
 fi
@@ -156,10 +154,10 @@ fi
 
 if [ "$VES_RUN_TENSORBOARD" = "1" ]; then
 	killall tensorboard 2>/dev/null || true
-	nohup "$python_bin" -m tensorboard.main --logdir ./logs --port=6006 ./logs/$commit_hash &
+	nohup "$python_bin" -m tensorboard.main --logdir "$VES_RUN_DIR/logs" --port=6006 "$VES_RUN_DIR/logs/$commit_hash" &
 fi
 
-if command -v timeout >/dev/null 2>&1; then
+if command -v timeout >/dev/null 2>&1 && [ "$VES_HARD_TIMEOUT" -gt 0 ]; then
 	timeout --foreground -k 30 "$VES_HARD_TIMEOUT" "$python_bin" train_reconstruction.py &
 	train_pid=$!
 	(

@@ -14,25 +14,6 @@ import constants
 
 # logging.getLogger("torch._dynamo").setLevel(logging.DEBUG)
 
-mp.set_start_method("spawn", force=True)
-
-torch.autograd.set_detect_anomaly(False)
-torch.backends.cudnn.benchmark = True
-torch.backends.cuda.matmul.allow_tf32 = False
-torch.backends.cudnn.allow_tf32 = False
-
-dynamo.config.recompile_limit = 100
-dynamo.config.accumulated_recompile_limit = 100
-torch._dynamo.config.allow_unspec_int_on_nn_module = True
-torch._dynamo.config.capture_scalar_outputs = True
-torch._dynamo.config.suppress_errors = False
-torch._dynamo.config.disable = True
-torch._dynamo.config.verbose = True
-torch.cuda.empty_cache()
-faulthandler.enable()
-
-ROOT = Path(__file__).resolve().parents[1]
-base_path = str(ROOT)
 
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
@@ -46,6 +27,28 @@ def _env_int(name: str, default: int) -> int:
     if raw is None:
         return default
     return int(raw)
+
+
+mp.set_start_method("spawn", force=True)
+
+torch.autograd.set_detect_anomaly(False)
+torch.backends.cudnn.benchmark = True
+allow_tf32 = _env_flag("VES_ALLOW_TF32", True)
+torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+torch.backends.cudnn.allow_tf32 = allow_tf32
+
+dynamo.config.recompile_limit = 100
+dynamo.config.accumulated_recompile_limit = 100
+torch._dynamo.config.allow_unspec_int_on_nn_module = True
+torch._dynamo.config.capture_scalar_outputs = True
+torch._dynamo.config.suppress_errors = False
+torch._dynamo.config.disable = True
+torch._dynamo.config.verbose = _env_flag("VES_DYNAMO_VERBOSE")
+torch.cuda.empty_cache()
+faulthandler.enable()
+
+ROOT = Path(__file__).resolve().parents[1]
+base_path = str(ROOT)
 
 
 def _size_profile():
@@ -84,6 +87,8 @@ def _select_device() -> torch.device:
 smoke_test = _env_flag("VES_SMOKE_TEST")
 device: torch.device = _select_device()
 max_size = _env_int("VES_MAX_SIZE", 64 if smoke_test else 0) or None
+seed = _env_int("VES_SEED", 42)
+min_dataset_size = _env_int("VES_MIN_DATASET_SIZE", 1)
 
 if smoke_test:
     torch.set_num_threads(_env_int("VES_TORCH_THREADS", 2))
@@ -157,14 +162,18 @@ num_classes = len(letter_to_idx)
 
 print_every_batches = 1
 
-save_every_epoch = True
-save_to = "./new.pth"
 load_from = None
+
+run_dir_raw = os.getenv("VES_RUN_DIR")
+run_dir = Path(run_dir_raw) if run_dir_raw else None
+
+save_every_epoch = True
+save_to = str(run_dir / "new.pth") if run_dir else "./new.pth"
 display_from = save_to
 
-log_dir = "./logs/"
+log_dir = str(run_dir / "logs") if run_dir else "./logs/"
 print(f"logging to: {log_dir}")
-save_to_dir = "./checkpoints/"
+save_to_dir = str(run_dir / "checkpoints") if run_dir else "./checkpoints/"
 
 meta_div_weight = 0.0
 meta_f_weight = 1.0
