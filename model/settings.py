@@ -163,6 +163,13 @@ num_classes = len(letter_to_idx)
 print_every_batches = 1
 
 load_from = os.getenv("VES_RESUME_FROM") or None
+resume_training_state = os.getenv("VES_RESUME_TRAINING_STATE") or None
+step_checkpoint_every_batches = _env_int(
+    "VES_STEP_CHECKPOINT_EVERY_BATCHES",
+    0 if smoke_test else 500,
+)
+step_checkpoint_every_minutes = _env_int("VES_STEP_CHECKPOINT_EVERY_MINUTES", 0)
+keep_step_checkpoints = _env_int("VES_KEEP_STEP_CHECKPOINTS", 3)
 
 run_dir_raw = os.getenv("VES_RUN_DIR")
 run_dir = Path(run_dir_raw) if run_dir_raw else None

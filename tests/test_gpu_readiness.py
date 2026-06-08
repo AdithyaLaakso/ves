@@ -2,8 +2,10 @@ import sys
 import subprocess
 import tempfile
 import unittest
+import random
 from pathlib import Path
 
+import numpy as np
 import torch
 
 
@@ -191,6 +193,40 @@ print(settings.load_from)
 
             self.assertIn(str(checkpoint), result.stdout.strip().splitlines())
 
+    def test_settings_reads_training_recovery_environment(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint = Path(tmpdir) / "recovery-latest.pt"
+            code = """
+import settings
+print(settings.resume_training_state)
+print(settings.step_checkpoint_every_batches)
+print(settings.step_checkpoint_every_minutes)
+print(settings.keep_step_checkpoints)
+"""
+            env = {
+                "PYTHONPATH": str(MODEL_DIR),
+                "VES_SMOKE_TEST": "1",
+                "VES_FORCE_CPU": "1",
+                "VES_RESUME_TRAINING_STATE": str(checkpoint),
+                "VES_STEP_CHECKPOINT_EVERY_BATCHES": "7",
+                "VES_STEP_CHECKPOINT_EVERY_MINUTES": "11",
+                "VES_KEEP_STEP_CHECKPOINTS": "2",
+            }
+            result = subprocess.run(
+                [sys.executable, "-c", code],
+                cwd=ROOT,
+                env={**env},
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            lines = result.stdout.strip().splitlines()
+            self.assertIn(str(checkpoint), lines)
+            self.assertIn("7", lines)
+            self.assertIn("11", lines)
+            self.assertIn("2", lines)
+
     def test_setup_script_makes_cuda_debug_opt_in(self):
         setup_text = (MODEL_DIR / "setup.zsh").read_text(encoding="utf-8")
 
@@ -296,6 +332,124 @@ class VisualReviewTests(unittest.TestCase):
         )
 
         self.assertIn("Generate headless visual review contact sheets", result.stdout)
+
+
+class TrainingRecoveryTests(unittest.TestCase):
+    def test_recovery_checkpoint_round_trips_training_state(self):
+        import training_recovery
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_dir = Path(tmpdir)
+            model = torch.nn.Linear(2, 1)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+            scaler = torch.amp.GradScaler("cpu")
+
+            recovery_path = training_recovery.save_recovery_checkpoint(
+                checkpoint_dir=checkpoint_dir,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                epoch=3,
+                next_batch=41,
+                global_step=1234,
+                metadata={"run_dir": "runs/example"},
+            )
+
+            loaded = training_recovery.load_recovery_checkpoint(
+                recovery_path,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                map_location=torch.device("cpu"),
+            )
+
+            self.assertEqual(recovery_path, checkpoint_dir / "recovery-latest.pt")
+            self.assertEqual(loaded["epoch"], 3)
+            self.assertEqual(loaded["next_batch"], 41)
+            self.assertEqual(loaded["global_step"], 1234)
+            self.assertEqual(loaded["metadata"]["run_dir"], "runs/example")
+            self.assertEqual(loaded["version"], 1)
+
+    def test_recovery_checkpoint_restores_rng_state(self):
+        import training_recovery
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_dir = Path(tmpdir)
+            model = torch.nn.Linear(2, 1)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+            scaler = torch.amp.GradScaler("cpu")
+
+            random.seed(12)
+            np.random.seed(12)
+            torch.manual_seed(12)
+
+            training_recovery.save_recovery_checkpoint(
+                checkpoint_dir=checkpoint_dir,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                epoch=0,
+                next_batch=1,
+                global_step=1,
+            )
+
+            expected_python = random.random()
+            expected_numpy = np.random.random()
+            expected_torch = torch.rand(1).item()
+
+            random.seed(99)
+            np.random.seed(99)
+            torch.manual_seed(99)
+
+            training_recovery.load_recovery_checkpoint(
+                checkpoint_dir / "recovery-latest.pt",
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                map_location=torch.device("cpu"),
+            )
+
+            self.assertEqual(random.random(), expected_python)
+            self.assertEqual(np.random.random(), expected_numpy)
+            self.assertEqual(torch.rand(1).item(), expected_torch)
+
+    def test_recovery_checkpoint_retention_keeps_latest_snapshots(self):
+        import training_recovery
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_dir = Path(tmpdir)
+            model = torch.nn.Linear(2, 1)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+            scaler = torch.amp.GradScaler("cpu")
+
+            for batch in range(1, 5):
+                training_recovery.save_recovery_checkpoint(
+                    checkpoint_dir=checkpoint_dir,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    scaler=scaler,
+                    epoch=0,
+                    next_batch=batch,
+                    global_step=batch,
+                    keep_snapshots=2,
+                    write_numbered_snapshot=True,
+                )
+
+            snapshots = sorted(checkpoint_dir.glob("recovery-epoch*-batch*.pt"))
+
+            self.assertEqual(
+                [path.name for path in snapshots],
+                ["recovery-epoch0-batch3.pt", "recovery-epoch0-batch4.pt"],
+            )
+            self.assertTrue((checkpoint_dir / "recovery-latest.pt").exists())
 
 
 if __name__ == "__main__":
