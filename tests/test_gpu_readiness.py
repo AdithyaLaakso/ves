@@ -245,12 +245,7 @@ class VisualReviewTests(unittest.TestCase):
 
         class FakeModel(torch.nn.Module):
             def forward(self, inputs):
-                outputs = torch.nn.functional.interpolate(
-                    inputs,
-                    size=(4, 4),
-                    mode="bilinear",
-                    align_corners=False,
-                )
+                outputs = torch.full((inputs.shape[0], 1, 4, 4), -2.0)
                 return outputs, torch.zeros(inputs.shape[0], 2)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -276,6 +271,20 @@ class VisualReviewTests(unittest.TestCase):
             self.assertIn('"checkpoint": "runs/example/new.pth"', metadata)
             self.assertIn('"indices": [', metadata)
             self.assertIn('"label": "alpha"', metadata)
+
+    def test_visual_review_applies_sigmoid_to_model_logits(self):
+        from usage import visual_review_sheets
+
+        logits = torch.tensor([[[[-2.0, 0.0], [2.0, 4.0]]]])
+
+        image = visual_review_sheets.model_output_to_image(logits)
+
+        pixels = list(image.getdata())
+        self.assertLess(pixels[0], pixels[1])
+        self.assertLess(pixels[1], pixels[2])
+        self.assertLess(pixels[2], pixels[3])
+        self.assertGreater(pixels[1], 120)
+        self.assertLess(pixels[1], 135)
 
     def test_visual_review_cli_help_runs_from_repo_root(self):
         result = subprocess.run(

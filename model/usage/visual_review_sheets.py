@@ -82,6 +82,13 @@ def _tensor_to_image(tensor: torch.Tensor, size: Optional[Sequence[int]] = None)
     return image
 
 
+def model_output_to_image(
+    logits: torch.Tensor,
+    size: Optional[Sequence[int]] = None,
+) -> Image.Image:
+    return _tensor_to_image(torch.sigmoid(logits), size)
+
+
 def _extract_model_output(raw_output):
     if isinstance(raw_output, tuple):
         return raw_output[0]
@@ -179,7 +186,7 @@ def create_visual_review(
                 {
                     "metadata": sample_metadata,
                     "input": _tensor_to_image(input_tensor),
-                    "output": _tensor_to_image(output_tensor, display_size),
+                    "output": model_output_to_image(output_tensor, display_size),
                     "target": _tensor_to_image(target_tensor, display_size),
                 }
             )
