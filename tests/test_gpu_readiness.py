@@ -335,6 +335,45 @@ class VisualReviewTests(unittest.TestCase):
 
 
 class TrainingRecoveryTests(unittest.TestCase):
+    def test_training_order_resume_slices_directly_from_saved_batch(self):
+        import train_reconstruction
+
+        order = list(range(20))
+
+        resumed = train_reconstruction.slice_train_order_for_resume(
+            order,
+            batch_size=4,
+            next_batch=3,
+        )
+
+        self.assertEqual(resumed, list(range(12, 20)))
+
+    def test_training_order_uses_deterministic_weighted_sampling(self):
+        import settings
+        import train_reconstruction
+
+        class FakeData:
+            def sample_weights(self, scheme):
+                self.scheme = scheme
+                return [1.0, 2.0, 3.0, 4.0]
+
+        original_strategy = settings.sampler_strategy
+        original_seed = settings.seed
+        try:
+            settings.sampler_strategy = "document_inv_sqrt"
+            settings.seed = 99
+            first = train_reconstruction.build_train_order(FakeData(), [0, 1, 2, 3], epoch=0)
+            second = train_reconstruction.build_train_order(FakeData(), [0, 1, 2, 3], epoch=0)
+            next_epoch = train_reconstruction.build_train_order(FakeData(), [0, 1, 2, 3], epoch=1)
+        finally:
+            settings.sampler_strategy = original_strategy
+            settings.seed = original_seed
+
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, next_epoch)
+        self.assertEqual(len(first), 4)
+        self.assertTrue(all(idx in {0, 1, 2, 3} for idx in first))
+
     def test_recovery_checkpoint_round_trips_training_state(self):
         import training_recovery
 
