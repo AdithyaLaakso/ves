@@ -151,10 +151,15 @@ def load_recovery_checkpoint(
     map_location: Optional[torch.device] = None,
 ) -> Dict[str, Any]:
     checkpoint = torch.load(path, map_location=map_location, weights_only=False)
-    model.load_state_dict(checkpoint["model"])
-    optimizer.load_state_dict(checkpoint["optimizer"])
+    model.load_state_dict(checkpoint["model"], strict=False)
+    try:
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        optimizer_loaded = True
+    except ValueError as exc:
+        print(f"Skipping optimizer state restore: {exc}")
+        optimizer_loaded = False
 
-    if scheduler is not None and checkpoint.get("scheduler") is not None:
+    if optimizer_loaded and scheduler is not None and checkpoint.get("scheduler") is not None:
         scheduler.load_state_dict(checkpoint["scheduler"])
     if scaler is not None and checkpoint.get("scaler") is not None:
         scaler.load_state_dict(checkpoint["scaler"])
