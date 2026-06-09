@@ -1,0 +1,110 @@
+AWS Full-Dataset Training Handoff
+
+Date: 2026-06-09
+
+Where we left off:
+
+- EC2 instance: `ves-gpu-smoke-01`
+- Full resumed run directory:
+  `model/runs/20260609T034800Z-508dd5292`
+- Run command resumed from:
+  `model/runs/20260608T200605Z-bf663a7d2/checkpoints/recovery-epoch0-batch13000.pt`
+- Observed completion metric:
+  `Epoch 1/1 | train_loss=2.9289 val_loss=2.6946`
+- Previous best comparable validation loss:
+  `3.5407` from `model/runs/20260607T221147Z-ce45afd60/new.pth`
+- Interpretation:
+  the full-dataset epoch materially improved validation loss, supporting the
+  hypothesis that the model was still undertrained rather than plateaued.
+
+Code state:
+
+- Latest pushed branch: `uncial-pilot-prep`
+- Latest pushed commit at handoff:
+  `72149c7a6 fix: resume training from sliced epoch order`
+- Important recovery changes now available:
+  - intra-epoch recovery checkpoints
+  - recovery loading tolerant of lazy model keys
+  - RNG restore through CPU state
+  - deterministic epoch-order slicing so future resumes do not replay thousands
+    of skipped batches
+
+Tomorrow's first checks after restarting EC2:
+
+1. Confirm the final model and epoch checkpoint exist:
+
+   ```bash
+   ls -lh /home/ubuntu/ves/model/runs/20260609T034800Z-508dd5292/new.pth
+   ls -lh /home/ubuntu/ves/model/runs/20260609T034800Z-508dd5292/checkpoints/0-1.pth
+   ```
+
+2. Confirm the tail of the run log includes the final save lines:
+
+   ```bash
+   tail -40 /home/ubuntu/ves/model/runs/logs/full_dataset_resume_from_batch13000.log
+   ```
+
+3. Pull the latest recovery efficiency fix if EC2 does not already have it:
+
+   ```bash
+   cd /home/ubuntu/ves
+   git pull origin uncial-pilot-prep
+   git log --oneline -1
+   ```
+
+   Expected latest commit:
+   `72149c7a6 fix: resume training from sliced epoch order`
+
+4. Regenerate direct visual comparisons with explicit absolute or unambiguous
+   output paths. Compare the same seed and sample count for:
+
+   - old checkpoint:
+     `runs/20260607T221147Z-ce45afd60/new.pth`
+   - full-dataset checkpoint:
+     `runs/20260609T034800Z-508dd5292/new.pth`
+
+   Suggested commands:
+
+   ```bash
+   cd /home/ubuntu/ves/model
+
+   VES_SIZE_PROFILE=96 /opt/pytorch/bin/python usage/visual_review_sheets.py \
+   runs/20260607T221147Z-ce45afd60/new.pth \
+   --output-dir runs/comparisons/20260609_old_32768_sigmoid \
+   --count 24 \
+   --seed 42 \
+   --samples-per-sheet 12
+
+   VES_SIZE_PROFILE=96 /opt/pytorch/bin/python usage/visual_review_sheets.py \
+   runs/20260609T034800Z-508dd5292/new.pth \
+   --output-dir runs/comparisons/20260609_full_dataset_sigmoid \
+   --count 24 \
+   --seed 42 \
+   --samples-per-sheet 12
+   ```
+
+5. Verify comparison metadata:
+
+   ```bash
+   grep -H '"checkpoint"' runs/comparisons/*/metadata.json
+   ```
+
+6. Copy comparison folders locally:
+
+   ```bash
+   scp -i /path/to/key.pem -r \
+   ubuntu@<public-ip>:/home/ubuntu/ves/model/runs/comparisons \
+   ./ves_visual_comparisons_20260609
+   ```
+
+Next training experiment:
+
+- Run one additional full-dataset epoch from:
+  `runs/20260609T034800Z-508dd5292/new.pth`
+- Compare the second full-dataset epoch's validation loss and visual review
+  against `val_loss=2.6946`.
+- If epoch 2 improves materially and visuals improve, additional epochs are
+  justified.
+- If loss improves but visuals remain weak for specific classes such as lunate
+  sigma, investigate class-specific data/label issues and output-resolution
+  limits before scaling much further.
