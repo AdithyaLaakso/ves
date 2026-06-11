@@ -227,6 +227,38 @@ print(settings.keep_step_checkpoints)
             self.assertIn("11", lines)
             self.assertIn("2", lines)
 
+    def test_settings_reads_loss_weights_from_environment(self):
+        code = """
+import settings
+print(settings.loss_settings.mse_weight)
+print(settings.loss_settings.focal_weight)
+print(settings.loss_settings.focal_alpha)
+print(settings.loss_settings.class_weight)
+"""
+        env = {
+            "PYTHONPATH": str(MODEL_DIR),
+            "VES_SMOKE_TEST": "1",
+            "VES_FORCE_CPU": "1",
+            "VES_MSE_WEIGHT": "1.5",
+            "VES_FOCAL_WEIGHT": "0",
+            "VES_FOCAL_ALPHA": "0.75",
+            "VES_CLASS_WEIGHT": "0.25",
+        }
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=ROOT,
+            env={**env},
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        lines = result.stdout.strip().splitlines()
+        self.assertIn("1.5", lines)
+        self.assertIn("0.0", lines)
+        self.assertIn("0.75", lines)
+        self.assertIn("0.25", lines)
+
     def test_setup_script_makes_cuda_debug_opt_in(self):
         setup_text = (MODEL_DIR / "setup.zsh").read_text(encoding="utf-8")
 
@@ -332,6 +364,39 @@ class VisualReviewTests(unittest.TestCase):
         )
 
         self.assertIn("Generate headless visual review contact sheets", result.stdout)
+
+    def test_target_inspection_cli_help_runs_from_repo_root(self):
+        result = subprocess.run(
+            [sys.executable, "model/usage/target_inspection_sheets.py", "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        self.assertIn("Generate target-only inspection sheets", result.stdout)
+
+    def test_per_class_metrics_cli_help_runs_from_repo_root(self):
+        result = subprocess.run(
+            [sys.executable, "model/usage/evaluate_per_class_metrics.py", "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        self.assertIn("Evaluate checkpoint metrics on deterministic per-class", result.stdout)
+
+    def test_prediction_diagnostics_cli_help_runs_from_repo_root(self):
+        result = subprocess.run(
+            [sys.executable, "model/usage/prediction_diagnostic_sheets.py", "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        self.assertIn("Generate fixed-sample diagnostic sheets", result.stdout)
 
 
 class TrainingRecoveryTests(unittest.TestCase):
@@ -556,6 +621,124 @@ class TrainingRecoveryTests(unittest.TestCase):
                 ["recovery-epoch0-batch3.pt", "recovery-epoch0-batch4.pt"],
             )
             self.assertTrue((checkpoint_dir / "recovery-latest.pt").exists())
+
+    def test_interrupted_recovery_matches_uninterrupted_tiny_training(self):
+        import settings
+        import train_reconstruction
+        import training_recovery
+
+        class TinyModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 4)
+                self.dropout = torch.nn.Dropout(p=0.35)
+
+            def forward(self, inputs):
+                return self.linear(self.dropout(inputs))
+
+        class TinyLoss(torch.nn.Module):
+            def forward(self, outputs, targets, epoch=0):
+                return torch.nn.functional.mse_loss(outputs, targets)
+
+        def make_batches():
+            inputs = torch.arange(24, dtype=torch.float32).view(6, 4) / 10.0
+            targets = torch.flip(inputs, dims=[1]) * 0.5
+            return [(inputs[idx : idx + 1], targets[idx : idx + 1]) for idx in range(6)]
+
+        def make_training_stack():
+            model = TinyModel()
+            optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+            scaler = torch.amp.GradScaler("cpu")
+            return model, optimizer, scheduler, scaler
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_device = train_reconstruction.device
+            original_checkpoint_batches = settings.step_checkpoint_every_batches
+            original_checkpoint_minutes = settings.step_checkpoint_every_minutes
+            original_keep_checkpoints = settings.keep_step_checkpoints
+            original_save_to_dir = settings.save_to_dir
+
+            try:
+                train_reconstruction.device = torch.device("cpu")
+                settings.step_checkpoint_every_batches = 2
+                settings.step_checkpoint_every_minutes = 0
+                settings.keep_step_checkpoints = 1
+                settings.save_to_dir = str(Path(tmpdir) / "checkpoints")
+
+                torch.manual_seed(20260610)
+                initial_model, _, _, _ = make_training_stack()
+                initial_state = {
+                    key: value.detach().clone()
+                    for key, value in initial_model.state_dict().items()
+                }
+
+                torch.manual_seed(20260611)
+                uninterrupted_model, uninterrupted_optimizer, uninterrupted_scheduler, uninterrupted_scaler = (
+                    make_training_stack()
+                )
+                uninterrupted_model.load_state_dict(initial_state)
+                train_reconstruction.train_epoch(
+                    uninterrupted_model,
+                    make_batches(),
+                    uninterrupted_optimizer,
+                    TinyLoss(),
+                    uninterrupted_scaler,
+                    uninterrupted_scheduler,
+                )
+
+                torch.manual_seed(20260611)
+                interrupted_model, interrupted_optimizer, interrupted_scheduler, interrupted_scaler = (
+                    make_training_stack()
+                )
+                interrupted_model.load_state_dict(initial_state)
+                train_reconstruction.train_epoch(
+                    interrupted_model,
+                    make_batches()[:2],
+                    interrupted_optimizer,
+                    TinyLoss(),
+                    interrupted_scaler,
+                    interrupted_scheduler,
+                )
+
+                resumed_model, resumed_optimizer, resumed_scheduler, resumed_scaler = (
+                    make_training_stack()
+                )
+                loaded = training_recovery.load_recovery_checkpoint(
+                    Path(settings.save_to_dir) / "recovery-latest.pt",
+                    model=resumed_model,
+                    optimizer=resumed_optimizer,
+                    scheduler=resumed_scheduler,
+                    scaler=resumed_scaler,
+                    map_location=torch.device("cpu"),
+                )
+
+                self.assertEqual(loaded["next_batch"], 2)
+                train_reconstruction.train_epoch(
+                    resumed_model,
+                    make_batches()[2:],
+                    resumed_optimizer,
+                    TinyLoss(),
+                    resumed_scaler,
+                    resumed_scheduler,
+                    batch_number_offset=loaded["next_batch"],
+                    global_step=loaded["global_step"],
+                    train_loss_total=loaded["train_loss_total"],
+                    train_loss_samples=loaded["train_loss_samples"],
+                )
+
+                for name, uninterrupted_value in uninterrupted_model.state_dict().items():
+                    torch.testing.assert_close(
+                        resumed_model.state_dict()[name],
+                        uninterrupted_value,
+                        msg=f"Mismatch after recovery resume for {name}",
+                    )
+            finally:
+                train_reconstruction.device = original_device
+                settings.step_checkpoint_every_batches = original_checkpoint_batches
+                settings.step_checkpoint_every_minutes = original_checkpoint_minutes
+                settings.keep_step_checkpoints = original_keep_checkpoints
+                settings.save_to_dir = original_save_to_dir
 
 
 if __name__ == "__main__":

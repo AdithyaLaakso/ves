@@ -29,6 +29,13 @@ def _env_int(name: str, default: int) -> int:
     return int(raw)
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return float(raw)
+
+
 mp.set_start_method("spawn", force=True)
 
 torch.autograd.set_detect_anomaly(False)
@@ -195,14 +202,14 @@ freeze_recon = False
 freeze_shared = False
 
 loss_settings = LossSettings(
-    dice_weight=0.0,
-    mse_weight=1.0,
-    boundary_weight=0.000,
-    focal_weight=10.0,
-    class_weight=2.0,
-    class_weight_delta=0.00000,
-    focal_alpha=0.2,
-    focal_gamma=2.0,
+    dice_weight=_env_float("VES_DICE_WEIGHT", 0.0),
+    mse_weight=_env_float("VES_MSE_WEIGHT", 1.0),
+    boundary_weight=_env_float("VES_BOUNDARY_WEIGHT", 0.000),
+    focal_weight=_env_float("VES_FOCAL_WEIGHT", 10.0),
+    class_weight=_env_float("VES_CLASS_WEIGHT", 2.0),
+    class_weight_delta=_env_float("VES_CLASS_WEIGHT_DELTA", 0.00000),
+    focal_alpha=_env_float("VES_FOCAL_ALPHA", 0.2),
+    focal_gamma=_env_float("VES_FOCAL_GAMMA", 2.0),
 )
 
 print(loss_settings)
