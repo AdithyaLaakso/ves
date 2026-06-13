@@ -406,6 +406,28 @@ class ExperimentRunnerTests(unittest.TestCase):
             run_command.assert_not_called()
             self.assertEqual([entry.status for entry in entries], ["planned"])
 
+    def test_custom_experiment_dir_keeps_inventory_local(self):
+        import experiment_runner
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment_dir = Path(tmpdir) / "sweep"
+            config = self._sweep_config(experiment_dir)
+
+            self.assertEqual(
+                experiment_runner.inventory_dir_for_experiment(experiment_dir),
+                experiment_dir,
+            )
+            experiment_runner.run_sweep(
+                config,
+                execute=False,
+                run_review=False,
+                index_existing=False,
+            )
+
+            self.assertTrue((experiment_dir / "experiment.json").exists())
+            self.assertTrue((experiment_dir / "run_inventory.json").exists())
+            self.assertTrue((experiment_dir / "RUN_INDEX.md").exists())
+
     def test_run_sweep_execute_stops_when_planned_output_exists(self):
         import experiment_runner
 
