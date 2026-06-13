@@ -400,6 +400,78 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertEqual(inventory["runs"][0]["status"], "review_failed")
             self.assertIn("| focal_2_50 | experiment-probe | review_failed |", markdown)
 
+    def test_probe_inventory_entry_distinguishes_failure_states(self):
+        import experiment_runner
+
+        config = experiment_runner.SweepConfig(
+            experiment_dir=Path("model/runs/experiments/example"),
+            focal_weights=(2.5,),
+            seed=42,
+            max_size=256,
+            num_epochs=1,
+            batch_size=4,
+            size_profile="96",
+            resume_from=None,
+            mse_weight=1.0,
+            class_weight=2.0,
+            focal_alpha=0.2,
+            focal_gamma=2.0,
+            python_bin="python3",
+            review_count=24,
+            review_seed=42,
+            review_indices=None,
+            samples_per_sheet=12,
+        )
+        plan = experiment_runner.build_probe_plans(config)[0]
+
+        training_failed = experiment_runner.probe_inventory_entry(plan, "training_failed", "setup.zsh failed")
+        review_failed = experiment_runner.probe_inventory_entry(plan, "review_failed", "visual review failed")
+
+        self.assertEqual(training_failed.status, "training_failed")
+        self.assertEqual(review_failed.status, "review_failed")
+        self.assertEqual(training_failed.known_variables["VES_FOCAL_WEIGHT"], 2.5)
+
+    def test_experiment_sweep_cli_help_runs_from_repo_root(self):
+        result = subprocess.run(
+            [sys.executable, "model/usage/run_experiment_sweep.py", "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        self.assertIn("Run or dry-run focal-weight experiment sweeps", result.stdout)
+
+    def test_experiment_sweep_cli_dry_run_writes_manifest_and_inventory(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment_dir = Path(tmpdir) / "runs" / "experiments" / "focal-weight-sweep"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "model/usage/run_experiment_sweep.py",
+                    "--experiment-dir",
+                    str(experiment_dir),
+                    "--focal-weights",
+                    "1.25,2.5",
+                    "--max-size",
+                    "128",
+                    "--num-epochs",
+                    "1",
+                    "--batch-size",
+                    "4",
+                    "--no-review",
+                    "--dry-run",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            self.assertIn("DRY RUN", result.stdout)
+            self.assertTrue((experiment_dir / "experiment.json").exists())
+            self.assertTrue((Path(tmpdir) / "runs" / "run_inventory.json").exists())
+
 
 class VisualReviewTests(unittest.TestCase):
     def test_visual_review_selects_deterministic_indices(self):
