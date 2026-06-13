@@ -324,6 +324,33 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertEqual(plans[0].env["VES_FOCAL_WEIGHT"], "1.25")
             self.assertEqual(plans[1].env["VES_FOCAL_WEIGHT"], "2.5")
 
+    def test_build_probe_plans_rejects_duplicate_generated_names(self):
+        import experiment_runner
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = experiment_runner.SweepConfig(
+                experiment_dir=Path(tmpdir) / "focal-weight-sweep-20260613",
+                focal_weights=(1.235, 1.236),
+                seed=42,
+                max_size=256,
+                num_epochs=1,
+                batch_size=4,
+                size_profile="96",
+                resume_from=None,
+                mse_weight=1.0,
+                class_weight=2.0,
+                focal_alpha=0.2,
+                focal_gamma=2.0,
+                python_bin="python3",
+                review_count=24,
+                review_seed=99,
+                review_indices=None,
+                samples_per_sheet=12,
+            )
+
+            with self.assertRaisesRegex(ValueError, "focal_1_24"):
+                experiment_runner.build_probe_plans(config)
+
 
 class VisualReviewTests(unittest.TestCase):
     def test_visual_review_selects_deterministic_indices(self):

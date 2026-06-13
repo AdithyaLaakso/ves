@@ -80,8 +80,12 @@ def default_experiment_dir(date: Optional[datetime] = None) -> Path:
 
 def build_probe_plans(config: SweepConfig) -> List[ProbePlan]:
     plans: List[ProbePlan] = []
+    seen_names = set()
     for focal_weight in config.focal_weights:
         name = focal_weight_name(focal_weight)
+        if name in seen_names:
+            raise ValueError(f"Duplicate focal weight plan name generated: {name}")
+        seen_names.add(name)
         run_dir = config.experiment_dir / "runs" / name
         checkpoint_path = run_dir / "new.pth"
         review_dir = config.experiment_dir / "reviews" / name
