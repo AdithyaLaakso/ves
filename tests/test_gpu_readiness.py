@@ -4,7 +4,9 @@ import subprocess
 import tempfile
 import unittest
 import random
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -268,6 +270,29 @@ print(settings.loss_settings.class_weight)
 
 
 class ExperimentRunnerTests(unittest.TestCase):
+    def _sweep_config(self, experiment_dir: Path, focal_weights=(1.25,)):
+        import experiment_runner
+
+        return experiment_runner.SweepConfig(
+            experiment_dir=experiment_dir,
+            focal_weights=focal_weights,
+            seed=42,
+            max_size=128,
+            num_epochs=1,
+            batch_size=4,
+            size_profile="96",
+            resume_from=None,
+            mse_weight=1.0,
+            class_weight=2.0,
+            focal_alpha=0.2,
+            focal_gamma=2.0,
+            python_bin="python3",
+            review_count=24,
+            review_seed=42,
+            review_indices=None,
+            samples_per_sheet=12,
+        )
+
     def test_focal_weight_names_are_stable(self):
         import experiment_runner
 
@@ -351,6 +376,56 @@ class ExperimentRunnerTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "focal_1_24"):
                 experiment_runner.build_probe_plans(config)
+
+    def test_default_experiment_dir_includes_utc_seconds(self):
+        import experiment_runner
+
+        path = experiment_runner.default_experiment_dir(
+            datetime(2026, 6, 13, 14, 5, 9, tzinfo=timezone.utc)
+        )
+
+        self.assertEqual(
+            path,
+            MODEL_DIR / "runs" / "experiments" / "focal-weight-sweep-20260613T140509Z",
+        )
+
+    def test_run_sweep_dry_run_does_not_launch_training(self):
+        import experiment_runner
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = self._sweep_config(Path(tmpdir) / "runs" / "experiments" / "sweep")
+
+            with patch("experiment_runner.run_command", side_effect=AssertionError("run_command called")) as run_command:
+                entries = experiment_runner.run_sweep(
+                    config,
+                    execute=False,
+                    run_review=False,
+                    index_existing=False,
+                )
+
+            run_command.assert_not_called()
+            self.assertEqual([entry.status for entry in entries], ["planned"])
+
+    def test_run_sweep_execute_stops_when_planned_output_exists(self):
+        import experiment_runner
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment_dir = Path(tmpdir) / "runs" / "experiments" / "sweep"
+            config = self._sweep_config(experiment_dir)
+            existing_run_dir = experiment_dir / "runs" / "focal_1_25"
+            existing_run_dir.mkdir(parents=True)
+
+            with patch("experiment_runner.run_command", side_effect=AssertionError("run_command called")) as run_command:
+                entries = experiment_runner.run_sweep(
+                    config,
+                    execute=True,
+                    run_review=False,
+                    index_existing=False,
+                )
+
+            run_command.assert_not_called()
+            self.assertEqual([entry.status for entry in entries], ["output_exists"])
+            self.assertTrue((Path(tmpdir) / "runs" / "run_inventory.json").exists())
 
     def test_existing_runs_are_indexed_without_fabricated_values(self):
         import experiment_runner
@@ -472,6 +547,49 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertIn("DRY RUN", result.stdout)
             self.assertTrue((experiment_dir / "experiment.json").exists())
             self.assertTrue((Path(tmpdir) / "runs" / "run_inventory.json").exists())
+
+    def test_experiment_sweep_cli_rejects_execute_with_dry_run(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "model/usage/run_experiment_sweep.py",
+                "--execute",
+                "--dry-run",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not allowed with argument", result.stderr)
+
+    def test_experiment_sweep_cli_returns_nonzero_for_current_sweep_failure(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment_dir = Path(tmpdir) / "runs" / "experiments" / "focal-weight-sweep"
+            existing_run_dir = experiment_dir / "runs" / "focal_1_25"
+            existing_run_dir.mkdir(parents=True)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "model/usage/run_experiment_sweep.py",
+                    "--experiment-dir",
+                    str(experiment_dir),
+                    "--focal-weights",
+                    "1.25",
+                    "--no-review",
+                    "--execute",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("output_exists", (Path(tmpdir) / "runs" / "run_inventory.json").read_text(encoding="utf-8"))
 
 
 class VisualReviewTests(unittest.TestCase):
