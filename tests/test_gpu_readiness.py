@@ -1,3 +1,4 @@
+import json
 import sys
 import subprocess
 import tempfile
@@ -350,6 +351,54 @@ class ExperimentRunnerTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "focal_1_24"):
                 experiment_runner.build_probe_plans(config)
+
+    def test_existing_runs_are_indexed_without_fabricated_values(self):
+        import experiment_runner
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runs_dir = Path(tmpdir) / "runs"
+            run_dir = runs_dir / "20260610-local-focal10-256x2"
+            run_dir.mkdir(parents=True)
+            (run_dir / "new.pth").write_bytes(b"checkpoint")
+            (run_dir / "07415d46e.stamp").write_text("", encoding="utf-8")
+            (runs_dir / "logs").mkdir()
+            (runs_dir / "comparisons").mkdir()
+
+            entries = experiment_runner.discover_existing_runs(runs_dir)
+
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].id, "20260610-local-focal10-256x2")
+            self.assertEqual(entries[0].category, "local-probe")
+            self.assertEqual(entries[0].checkpoint, str(run_dir / "new.pth"))
+            self.assertEqual(entries[0].known_variables, {})
+            self.assertEqual(entries[0].status, "indexed")
+
+    def test_inventory_json_and_markdown_are_written(self):
+        import experiment_runner
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runs_dir = Path(tmpdir) / "runs"
+            runs_dir.mkdir()
+            entries = [
+                experiment_runner.InventoryEntry(
+                    id="focal_2_50",
+                    category="experiment-probe",
+                    path="model/runs/experiments/example/runs/focal_2_50",
+                    checkpoint="model/runs/experiments/example/runs/focal_2_50/new.pth",
+                    review_paths=["model/runs/experiments/example/reviews/focal_2_50"],
+                    known_variables={"VES_FOCAL_WEIGHT": 2.5},
+                    status="review_failed",
+                    notes="training succeeded; visual review failed",
+                )
+            ]
+
+            experiment_runner.write_inventory(runs_dir, entries)
+
+            inventory = json.loads((runs_dir / "run_inventory.json").read_text(encoding="utf-8"))
+            markdown = (runs_dir / "RUN_INDEX.md").read_text(encoding="utf-8")
+            self.assertEqual(inventory["runs"][0]["id"], "focal_2_50")
+            self.assertEqual(inventory["runs"][0]["status"], "review_failed")
+            self.assertIn("| focal_2_50 | experiment-probe | review_failed |", markdown)
 
 
 class VisualReviewTests(unittest.TestCase):
