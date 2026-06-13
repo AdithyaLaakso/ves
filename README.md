@@ -60,6 +60,35 @@ Useful run controls:
 7. `VES_KEEP_STEP_CHECKPOINTS=3` keeps the latest numbered recovery snapshots in addition to `checkpoints/recovery-latest.pt`.
 8. `VES_RESUME_TRAINING_STATE=runs/<run_id>/checkpoints/recovery-latest.pt` resumes model, optimizer, scheduler, scaler, RNG state, epoch, batch, and global step from an intra-epoch recovery checkpoint.
 
+To plan a short focal-weight sweep without launching training:
+
+```bash
+python model/usage/run_experiment_sweep.py \
+  --dry-run \
+  --focal-weights 1.25,1.5,2.0,2.5,3.0,4.0 \
+  --max-size 256 \
+  --num-epochs 1 \
+  --batch-size 4 \
+  --size-profile 96 \
+  --no-review
+```
+
+This writes `experiment.json`, `model/runs/run_inventory.json`, and `model/runs/RUN_INDEX.md`. Dry-run mode does not launch training.
+
+To execute the same sweep after reviewing the plan:
+
+```bash
+python model/usage/run_experiment_sweep.py \
+  --execute \
+  --focal-weights 1.25,1.5,2.0,2.5,3.0,4.0 \
+  --max-size 256 \
+  --num-epochs 1 \
+  --batch-size 4 \
+  --size-profile 96
+```
+
+Each probe writes under `model/runs/experiments/focal-weight-sweep-YYYYMMDD/runs/`. Review the generated visual sheets and inventory before launching a second sweep or renaming old folders.
+
 For long EC2 runs, use `tmux` and tee output to a persistent log:
 
 ```
