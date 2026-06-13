@@ -77,6 +77,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     )
     mode = "EXECUTE" if execute else "DRY RUN"
     print(f"{mode}: wrote {experiment_dir / 'experiment.json'}")
+    print(f"{mode}: wrote {experiment_runner.inventory_dir_for_experiment(experiment_dir) / 'run_inventory.json'}")
     print(f"{mode}: indexed {len(entries)} run entries")
     return 0
 
