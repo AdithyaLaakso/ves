@@ -166,6 +166,9 @@ focal-1 baseline unless its original environment is verified from logs.
   and diagnostic sheets for `epoch2`, `focal_0_25`, `focal_1_00`, and
   `focal_1_25` on deterministic omicron, epsilon, lunate sigma, and chi
   samples.
+- `20260619-focal-0-00-endpoint`: resumed from the same epoch-2 checkpoint with
+  `VES_FOCAL_WEIGHT=0.0`, then compared `focal_0_00` against `focal_0_25` and
+  `epoch2` on the same concern-class metric set.
 
 ### Decisions
 
@@ -222,6 +225,16 @@ structure, but their fixed-threshold ink masks are still poor. The current
 objective and quick ink metrics therefore appear misaligned with the desired
 grayscale letter reconstruction behavior.
 
+The focal-zero endpoint test showed that disabling focal entirely is not better
+than `focal_0_25` for these concern-class grayscale diagnostics. Across omicron,
+epsilon, lunate sigma, and chi, `focal_0_25` had the best MSE and SSIM-like
+scores among `epoch2`, `focal_0_00`, and `focal_0_25`. For omicron,
+`focal_0_00` scored `mse=0.0593` and `ssim_like=0.3803`, while `focal_0_25`
+scored `mse=0.0569` and `ssim_like=0.3898`. The `focal_0_00` run predicted
+slightly more ink than `focal_0_25`, but that did not improve grayscale
+fidelity. This makes `0.25` a better lower-bound candidate than `0.0` for this
+late-resume setup.
+
 ### Open Questions
 
 - Was the full-dataset epoch-2 checkpoint trained with default focal `10.0`, or
@@ -231,3 +244,5 @@ grayscale letter reconstruction behavior.
   coverage?
 - Should future model-selection criteria prioritize grayscale MSE/SSIM-like
   concern-class diagnostics over fixed-threshold ink IoU and recall?
+- Should `VES_FOCAL_WEIGHT=0.25` become the provisional lower-focal baseline
+  while the project investigates target construction and output-size changes?
