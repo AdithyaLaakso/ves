@@ -100,3 +100,85 @@ and interpretation need to be logged consistently.
 - Can a new contributor with agentic-engineering experience help automate run
   logging, handoff documents, or experiment setup without taking over research
   direction?
+
+## 2026-06-19
+
+### Focus
+
+Run a bounded AWS focal-weight probe from the full-dataset epoch-2 checkpoint
+and decide whether increasing focal pressure above the current candidate range
+is worth further testing.
+
+### Context
+
+The focal-weight sweep wrapper and run inventory were already in place. The
+first AWS dry run confirmed that six planned probes could be generated without
+launching training. A from-scratch `focal_1_25` smoke run with `max_size=256`
+only produced flat gray outputs, which confirmed the wrapper path but was not a
+meaningful model-quality test.
+
+The next probe therefore resumed from the full-dataset epoch-2 checkpoint:
+`runs/20260610T015145Z-07415d46e/new.pth`.
+
+Existing local notes show that explicit focal-weight `1` data does exist from
+earlier bounded comparisons:
+
+- `20260610-local-focal1-128`
+- `20260610-local-focal1-256x2`
+- AWS/local folders named `20260610-focal1-full` and `20260611-focal1-full`
+
+However, the epoch-2 checkpoint used as the resume baseline is not recorded in
+the current ledger as focal weight `1`. The code default for unspecified
+`VES_FOCAL_WEIGHT` is `10.0`, so future notes should not call that checkpoint a
+focal-1 baseline unless its original environment is verified from logs.
+
+### Changes
+
+- Started the stopped AWS `g6.xlarge` instance `ves-gpu-smoke-01`.
+- Pulled the current `uncial-pilot-prep` branch on AWS.
+- Used variable-based shell commands for long local/AWS paths to reduce copy and
+  paste errors.
+- Copied the completed AWS experiment folders into `model/downloads/` for local
+  inspection, while keeping generated artifacts out of git.
+
+### Experiments
+
+- `20260619-focal-1-25-resume-smoke-256`: resumed from epoch 2 with
+  `VES_FOCAL_WEIGHT=1.25`, `max_size=256`, `num_epochs=1`, `batch_size=4`.
+  The run completed and wrote a checkpoint. Visual review was active rather
+  than flat gray, but looked nearly identical to the epoch-2 baseline on the
+  fixed 24-sample review set.
+- `20260619-focal-1-25-2048`: resumed from epoch 2 with
+  `VES_FOCAL_WEIGHT=1.25`, `max_size=2048`, `num_epochs=1`, `batch_size=4`.
+  The run completed and generated fixed-seed review sheets.
+
+### Decisions
+
+- Do not run the full upward focal-weight sweep yet. The `1.25` value is already
+  visually aggressive when given enough samples to move the model.
+- Treat the previous focal-1 evidence as relevant, but keep it distinct from
+  the epoch-2 baseline until the exact baseline focal setting is verified.
+- Next focal-weight tests should move downward or compare against explicit
+  `VES_FOCAL_WEIGHT=1`, rather than increasing to `1.5`, `2.0`, `2.5`, `3.0`,
+  or `4.0`.
+
+### Results
+
+The 2048-sample resumed `focal_1_25` probe visibly worsened the model output.
+Compared with the epoch-2 baseline sheets on the same fixed review indices, the
+model-output column became more saturated and blob-like, with large black
+regions, thick coarse shapes, and less letter-like structure. Omicron and
+epsilon concerns were not improved.
+
+The result supports the interpretation that increasing focal pressure above the
+current candidate range pushes the model toward overconfident dark/blob outputs.
+The pipeline worked, but the tested setting is not promising.
+
+### Open Questions
+
+- Was the full-dataset epoch-2 checkpoint trained with default focal `10.0`, or
+  was an explicit focal value used in the original AWS environment?
+- Should the next AWS probe use explicit `VES_FOCAL_WEIGHT=1.0`, or should it
+  test lower values such as `0.25`, `0.5`, and `0.75`?
+- Should we compute per-class visual metrics before spending more GPU time on
+  focal-weight changes?
