@@ -702,6 +702,54 @@ class VisualReviewTests(unittest.TestCase):
         self.assertGreater(pixels[1], 120)
         self.assertLess(pixels[1], 135)
 
+    def test_image_metrics_reports_fixed_threshold_aliases(self):
+        from usage.evaluate_visual_regression import _image_metrics
+
+        pred = torch.tensor([[0.25, 0.75], [0.25, 0.75]])
+        target = torch.tensor([[0.25, 0.25], [0.75, 0.75]])
+
+        metrics = _image_metrics(pred, target)
+
+        self.assertEqual(metrics["fixed_0_5_ink_iou"], metrics["ink_iou"])
+        self.assertEqual(metrics["fixed_0_5_ink_precision"], metrics["ink_precision"])
+        self.assertEqual(metrics["fixed_0_5_ink_recall"], metrics["ink_recall"])
+        self.assertEqual(metrics["fixed_0_5_pred_ink_fraction"], metrics["pred_ink_fraction"])
+        self.assertEqual(metrics["fixed_0_5_target_ink_fraction"], metrics["target_ink_fraction"])
+
+    def test_image_metrics_otsu_threshold_avoids_global_half_overmarking(self):
+        from usage.evaluate_visual_regression import _image_metrics
+
+        pred = torch.tensor(
+            [
+                [0.18, 0.20, 0.22, 0.24],
+                [0.20, 0.22, 0.24, 0.26],
+                [0.62, 0.66, 0.70, 0.74],
+                [0.68, 0.72, 0.76, 0.80],
+            ]
+        )
+        target = pred.clone()
+
+        metrics = _image_metrics(pred, target)
+
+        self.assertGreater(metrics["fixed_0_5_target_ink_fraction"], 0.45)
+        self.assertLess(metrics["otsu_target_ink_fraction"], metrics["fixed_0_5_target_ink_fraction"])
+        self.assertGreaterEqual(metrics["otsu_target_threshold"], 0.0)
+        self.assertLessEqual(metrics["otsu_target_threshold"], 1.0)
+
+    def test_image_metrics_soft_ink_prefers_closer_grayscale_prediction(self):
+        from usage.evaluate_visual_regression import _image_metrics
+
+        target = torch.tensor([[0.15, 0.25], [0.70, 0.85]])
+        close_pred = torch.tensor([[0.18, 0.28], [0.68, 0.82]])
+        black_pred = torch.zeros((2, 2))
+
+        close_metrics = _image_metrics(close_pred, target)
+        black_metrics = _image_metrics(black_pred, target)
+
+        self.assertGreater(close_metrics["soft_ink_iou"], black_metrics["soft_ink_iou"])
+        self.assertGreater(close_metrics["soft_ink_dice"], black_metrics["soft_ink_dice"])
+        self.assertLess(close_metrics["soft_ink_abs_diff"], black_metrics["soft_ink_abs_diff"])
+
     def test_visual_review_cli_help_runs_from_repo_root(self):
         result = subprocess.run(
             [sys.executable, "model/usage/visual_review_sheets.py", "--help"],
