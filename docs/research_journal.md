@@ -158,6 +158,10 @@ focal-1 baseline unless its original environment is verified from logs.
   `runs/focal_1_00/`, beside the earlier `runs/focal_1_25/` output. The copied
   local folder therefore contains both review sets, but its `experiment.json`
   now describes the later focal-1.0 probe.
+- `20260619-focal-0-25-2048`: resumed from the same epoch-2 checkpoint with
+  `VES_FOCAL_WEIGHT=0.25`, `max_size=2048`, `num_epochs=1`, `batch_size=4`.
+  The run completed in its own experiment directory and generated fixed-seed
+  review sheets.
 
 ### Decisions
 
@@ -189,12 +193,20 @@ comparison of the rendered PNGs showed small but non-zero differences, so the
 files are not byte-identical, but the qualitative result is effectively the
 same.
 
+The `focal_0_25` probe also preserved the same qualitative failure mode. The
+fixed review sheets still showed saturated dark blobs and coarse shapes rather
+than smoother letter-like reconstructions. Pixel-level comparison against
+`focal_1_00` and `focal_1_25` showed somewhat larger differences than the
+`1.00` versus `1.25` comparison, but not enough to change the visual
+interpretation. This suggests that late one-epoch focal-weight changes in the
+`0.25` to `1.25` range are not the main lever for the current visual problem.
+
 ### Open Questions
 
 - Was the full-dataset epoch-2 checkpoint trained with default focal `10.0`, or
   was an explicit focal value used in the original AWS environment?
-- Should the next AWS probe test lower values such as `0.25`, `0.5`, and
-  `0.75`, or should the next step shift to per-class diagnostics before more
-  focal-weight runs?
+- Should the next AWS work shift to per-class diagnostics, class-weight changes,
+  target construction, or output-size experiments before more focal-weight
+  runs?
 - Should we compute per-class visual metrics before spending more GPU time on
   focal-weight changes?
