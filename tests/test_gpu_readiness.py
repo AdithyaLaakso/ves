@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 import torch
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +49,91 @@ class DataTransferTests(unittest.TestCase):
         self.assertEqual(moved_inputs.device.type, "cpu")
         self.assertEqual(moved_masks.device.type, "cpu")
         self.assertEqual(moved_labels.device.type, "cpu")
+
+    def test_collate_fn_stacks_hybrid_targets_as_nested_tuples(self):
+        import dataset
+
+        batch = [
+            (
+                torch.zeros(1, 4, 4),
+                (torch.ones(1, 2, 2), torch.zeros(1, 2, 2)),
+            ),
+            (
+                torch.ones(1, 4, 4),
+                (torch.zeros(1, 2, 2), torch.ones(1, 2, 2)),
+            ),
+        ]
+
+        inputs, (primary_targets, auxiliary_targets) = dataset.collate_fn(batch)
+
+        self.assertEqual(inputs.shape, (2, 1, 4, 4))
+        self.assertEqual(primary_targets.shape, (2, 1, 2, 2))
+        self.assertEqual(auxiliary_targets.shape, (2, 1, 2, 2))
+
+    def test_manifest_hybrid_mode_returns_primary_and_auxiliary_targets(self):
+        import dataset
+        import settings
+
+        original_hybrid = getattr(settings, "hybrid_target", False)
+        original_output_size = settings.output_size
+        try:
+            settings.hybrid_target = True
+            settings.output_size = 2
+            seg_data = object.__new__(dataset.SegData)
+            seg_data.input_size = (2, 2)
+            seg_data.output_size = (2, 2)
+            seg_data._normalize_manifest_clean = lambda image: image
+            seg_data._load_grayscale = lambda path: Image.fromarray(
+                np.array([[0, 128], [192, 255]], dtype=np.uint8),
+                mode="L",
+            )
+            seg_data._degrade_manifest_image = lambda image: image
+
+            item = {"input_path": Path("unused"), "source": "manifest"}
+            input_tensor, targets = seg_data._get_manifest_pair(item)
+
+            self.assertEqual(input_tensor.shape, (1, 2, 2))
+            self.assertIsInstance(targets, tuple)
+            self.assertEqual(len(targets), 2)
+            self.assertEqual(targets[0].shape, (1, 2, 2))
+            self.assertEqual(targets[1].shape, (1, 2, 2))
+            self.assertTrue(torch.allclose(targets[1], 1.0 - targets[0]))
+            self.assertGreaterEqual(targets[1].min().item(), 0.0)
+            self.assertLessEqual(targets[1].max().item(), 1.0)
+        finally:
+            settings.hybrid_target = original_hybrid
+            settings.output_size = original_output_size
+
+    def test_manifest_default_mode_returns_single_grayscale_target(self):
+        import dataset
+        import settings
+
+        original_hybrid = getattr(settings, "hybrid_target", False)
+        try:
+            settings.hybrid_target = False
+            seg_data = object.__new__(dataset.SegData)
+            seg_data.input_size = (2, 2)
+            seg_data.output_size = (2, 2)
+            seg_data._normalize_manifest_clean = lambda image: image
+            seg_data._load_grayscale = lambda path: Image.fromarray(
+                np.array([[0, 128], [192, 255]], dtype=np.uint8),
+                mode="L",
+            )
+            seg_data._degrade_manifest_image = lambda image: image
+
+            item = {"input_path": Path("unused"), "source": "manifest"}
+            input_tensor, target_tensor = seg_data._get_manifest_pair(item)
+
+            self.assertEqual(input_tensor.shape, (1, 2, 2))
+            self.assertEqual(target_tensor.shape, (1, 2, 2))
+            self.assertTrue(
+                torch.equal(
+                    target_tensor,
+                    torch.tensor([[[0.0, 128 / 255.0], [192 / 255.0, 1.0]]], dtype=torch.float32),
+                )
+            )
+        finally:
+            settings.hybrid_target = original_hybrid
 
 
 class ManifestPreflightTests(unittest.TestCase):
@@ -109,6 +195,167 @@ class ManifestPreflightTests(unittest.TestCase):
         finally:
             dataset.MAX_SIZE = original_max_size
             settings.seed = original_seed
+
+    def test_subtype_inv_sqrt_weights_use_label_and_subtype_counts(self):
+        import dataset
+        import settings
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assignments = Path(tmpdir) / "subtypes.csv"
+            assignments.write_text(
+                "\n".join(
+                    [
+                        "index,label,cluster",
+                        "10,EPSILON,1",
+                        "11,EPSILON,1",
+                        "12,EPSILON,2",
+                        "13,CHI,1",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            original_path = settings.subtype_assignment_path
+            try:
+                settings.subtype_assignment_path = str(assignments)
+                seg_data = object.__new__(dataset.SegData)
+                seg_data.metadata = {"type": "manifest"}
+                seg_data.dataset = [
+                    {"label": "EPSILON", "original_index": 10},
+                    {"label": "EPSILON", "original_index": 11},
+                    {"label": "EPSILON", "original_index": 12},
+                    {"label": "CHI", "original_index": 13},
+                ]
+
+                weights = seg_data.sample_weights("subtype_inv_sqrt")
+
+                self.assertAlmostEqual(weights[0], 1.0 / np.sqrt(2.0))
+                self.assertAlmostEqual(weights[1], 1.0 / np.sqrt(2.0))
+                self.assertAlmostEqual(weights[2], 1.0)
+                self.assertAlmostEqual(weights[3], 1.0)
+            finally:
+                settings.subtype_assignment_path = original_path
+
+    def test_subtype_inv_sqrt_uses_unknown_bucket_for_missing_assignments(self):
+        import dataset
+        import settings
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assignments = Path(tmpdir) / "subtypes.csv"
+            assignments.write_text(
+                "\n".join(
+                    [
+                        "index,label,cluster",
+                        "10,EPSILON,1",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            original_path = settings.subtype_assignment_path
+            try:
+                settings.subtype_assignment_path = str(assignments)
+                seg_data = object.__new__(dataset.SegData)
+                seg_data.metadata = {"type": "manifest"}
+                seg_data.dataset = [
+                    {"label": "EPSILON", "original_index": 10},
+                    {"label": "EPSILON", "original_index": 11},
+                    {"label": "EPSILON", "original_index": 12},
+                ]
+
+                weights = seg_data.sample_weights("subtype_inv_sqrt")
+
+                self.assertAlmostEqual(weights[0], 1.0)
+                self.assertAlmostEqual(weights[1], 1.0 / np.sqrt(2.0))
+                self.assertAlmostEqual(weights[2], 1.0 / np.sqrt(2.0))
+            finally:
+                settings.subtype_assignment_path = original_path
+
+    def test_learning_rate_reads_environment_override(self):
+        import importlib
+        import settings
+
+        original_lr = settings.segmentation_hyperparams.learning_rate
+        try:
+            with patch.dict("os.environ", {"VES_LEARNING_RATE": "5e-05"}, clear=False):
+                reloaded = importlib.reload(settings)
+
+            self.assertEqual(reloaded.segmentation_hyperparams.learning_rate, 5e-05)
+        finally:
+            with patch.dict("os.environ", {}, clear=False):
+                importlib.reload(settings)
+            self.assertEqual(settings.segmentation_hyperparams.learning_rate, original_lr)
+
+
+class ContrastNormalizationTests(unittest.TestCase):
+    def test_default_contrast_normalization_leaves_grayscale_unchanged(self):
+        import dataset
+        import settings
+
+        original_mode = settings.contrast_normalization
+        try:
+            settings.contrast_normalization = "none"
+            seg_data = object.__new__(dataset.SegData)
+            image = Image.fromarray(
+                np.array([[80, 100], [120, 140]], dtype=np.uint8),
+                mode="L",
+            )
+
+            normalized = seg_data._normalize_manifest_clean(image)
+
+            self.assertEqual(list(normalized.getdata()), list(image.getdata()))
+            self.assertEqual(normalized.mode, "L")
+        finally:
+            settings.contrast_normalization = original_mode
+
+    def test_percentile_contrast_normalization_stretches_luma(self):
+        import dataset
+        import settings
+
+        original_mode = settings.contrast_normalization
+        original_low = settings.contrast_low_percentile
+        original_high = settings.contrast_high_percentile
+        try:
+            settings.contrast_normalization = "percentile"
+            settings.contrast_low_percentile = 0.0
+            settings.contrast_high_percentile = 100.0
+            seg_data = object.__new__(dataset.SegData)
+            image = Image.fromarray(
+                np.array([[80, 100], [120, 140]], dtype=np.uint8),
+                mode="L",
+            )
+
+            normalized = seg_data._normalize_manifest_clean(image)
+
+            self.assertEqual(np.array(normalized).min(), 0)
+            self.assertEqual(np.array(normalized).max(), 255)
+            self.assertEqual(normalized.mode, "L")
+            self.assertEqual(normalized.size, image.size)
+        finally:
+            settings.contrast_normalization = original_mode
+            settings.contrast_low_percentile = original_low
+            settings.contrast_high_percentile = original_high
+
+    def test_percentile_contrast_normalization_rejects_invalid_bounds(self):
+        import dataset
+        import settings
+
+        original_mode = settings.contrast_normalization
+        original_low = settings.contrast_low_percentile
+        original_high = settings.contrast_high_percentile
+        try:
+            settings.contrast_normalization = "percentile"
+            settings.contrast_low_percentile = 98.0
+            settings.contrast_high_percentile = 2.0
+            seg_data = object.__new__(dataset.SegData)
+            image = Image.fromarray(np.zeros((2, 2), dtype=np.uint8), mode="L")
+
+            with self.assertRaises(ValueError):
+                seg_data._normalize_manifest_clean(image)
+        finally:
+            settings.contrast_normalization = original_mode
+            settings.contrast_low_percentile = original_low
+            settings.contrast_high_percentile = original_high
 
 
 class RunConfigurationTests(unittest.TestCase):

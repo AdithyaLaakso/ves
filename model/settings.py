@@ -129,7 +129,7 @@ SegmentationHyperparams = namedtuple(
 segmentation_hyperparams = SegmentationHyperparams(
     num_epochs=_env_int("VES_NUM_EPOCHS", 1 if smoke_test else 5),
     batch_size=_env_int("VES_BATCH_SIZE", 4 if smoke_test else 64),
-    learning_rate=1e-4,
+    learning_rate=_env_float("VES_LEARNING_RATE", 1e-4),
     train_percent=0.80,
     optimizer_class=torch.optim.AdamW,
 )
@@ -142,6 +142,11 @@ persistent_workers = False
 data_path = str(ROOT / "data" / "alpub_v2_manifest.json")
 add_to_path = str(ROOT)
 data_format = "auto"
+contrast_normalization = os.getenv("VES_CONTRAST_NORMALIZATION", "none").strip().lower()
+contrast_low_percentile = _env_float("VES_CONTRAST_LOW_PERCENTILE", 2.0)
+contrast_high_percentile = _env_float("VES_CONTRAST_HIGH_PERCENTILE", 98.0)
+hybrid_target = _env_flag("VES_HYBRID_TARGET")
+aux_target_weight = _env_float("VES_AUX_TARGET_WEIGHT", 0.25)
 
 track_levels = False
 levels = [0]
@@ -149,6 +154,7 @@ display_levels = levels[0] if levels else [0]
 
 split_by_document = True
 sampler_strategy = "document_inv_sqrt"
+subtype_assignment_path = os.getenv("VES_SUBTYPE_ASSIGNMENTS") or None
 
 size_profile = _size_profile()
 image_size = size_profile["image_size"]

@@ -1,3 +1,4 @@
+import csv
 import json
 import random
 from collections import defaultdict
@@ -135,7 +136,7 @@ class SegData(Dataset):
         root = Path(settings.add_to_path)
         allowed_labels = set(settings.letters)
 
-        for item in raw_data["records"]:
+        for original_index, item in enumerate(raw_data["records"]):
             label = constants.canonicalize_label(item["label"])
             if label not in allowed_labels:
                 continue
@@ -152,6 +153,7 @@ class SegData(Dataset):
                     "label": label,
                     "document_id": item.get("document_id", item["filename"]),
                     "level": 0,
+                    "original_index": original_index,
                 }
             )
 
@@ -171,7 +173,7 @@ class SegData(Dataset):
         root = self.data_path.parent
         allowed_labels = set(settings.letters)
 
-        for item in filtered:
+        for original_index, item in enumerate(filtered):
             label = constants.canonicalize_label(item[2])
             if label not in allowed_labels:
                 continue
@@ -189,6 +191,7 @@ class SegData(Dataset):
                     "label": label,
                     "document_id": item[0],
                     "level": int(item[3]),
+                    "original_index": original_index,
                 }
             )
 
@@ -211,7 +214,60 @@ class SegData(Dataset):
                 for item in self.dataset
             ]
 
+        if scheme == "subtype_inv_sqrt":
+            assignments = self._load_subtype_assignments()
+            group_counts = defaultdict(int)
+            keys = []
+            for idx, item in enumerate(self.dataset):
+                key = self._subtype_weight_key(item, idx, assignments)
+                keys.append(key)
+                group_counts[key] += 1
+            return [1.0 / np.sqrt(max(group_counts[key], 1)) for key in keys]
+
         raise ValueError(f"Unknown sampler strategy: {scheme}")
+
+    def _load_subtype_assignments(self) -> Dict[int, str]:
+        path = settings.subtype_assignment_path
+        if not path:
+            return {}
+
+        assignment_path = Path(path)
+        if not assignment_path.exists():
+            raise FileNotFoundError(f"Subtype assignment file not found: {assignment_path}")
+
+        if assignment_path.suffix.lower() == ".json":
+            raw = json.loads(assignment_path.read_text(encoding="utf-8"))
+            return {
+                int(index): str(value.get("cluster", value.get("subtype", "unknown")))
+                if isinstance(value, dict)
+                else str(value)
+                for index, value in raw.items()
+            }
+
+        assignments = {}
+        with assignment_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                raw_index = row.get("index")
+                if raw_index is None or raw_index == "":
+                    continue
+                subtype = row.get("cluster") or row.get("subtype") or "unknown"
+                row_label = row.get("label")
+                if row_label:
+                    subtype = f"{constants.canonicalize_label(row_label)}:{subtype}"
+                assignments[int(raw_index)] = str(subtype)
+        return assignments
+
+    def _subtype_weight_key(self, item: Dict, dataset_index: int, assignments: Dict[int, str]) -> Tuple[str, str]:
+        label = item["label"]
+        original_index = int(item.get("original_index", dataset_index))
+        subtype = assignments.get(original_index, "unknown")
+        if ":" in subtype:
+            subtype_label, subtype_value = subtype.split(":", 1)
+            if subtype_label != label:
+                subtype_value = "unknown"
+            subtype = subtype_value
+        return label, subtype
 
     def __len__(self):
         return len(self.dataset)
@@ -245,6 +301,32 @@ class SegData(Dataset):
         array = np.array(resized, dtype=np.float32) / 255.0
         return torch.from_numpy(array).unsqueeze(0)
 
+    def _normalize_manifest_clean(self, image: Image.Image) -> Image.Image:
+        mode = settings.contrast_normalization
+        if mode in {"", "none"}:
+            return image.copy()
+        if mode != "percentile":
+            raise ValueError(
+                f"Unsupported VES_CONTRAST_NORMALIZATION={mode!r}; "
+                "expected 'none' or 'percentile'."
+            )
+
+        low = float(settings.contrast_low_percentile)
+        high = float(settings.contrast_high_percentile)
+        if not 0.0 <= low < high <= 100.0:
+            raise ValueError(
+                "VES_CONTRAST_LOW_PERCENTILE and VES_CONTRAST_HIGH_PERCENTILE "
+                "must satisfy 0 <= low < high <= 100."
+            )
+
+        array = np.array(image, dtype=np.float32)
+        lo, hi = np.percentile(array, [low, high])
+        if hi <= lo:
+            return image.copy()
+
+        stretched = np.clip((array - lo) * 255.0 / (hi - lo), 0.0, 255.0)
+        return Image.fromarray(stretched.astype(np.uint8), mode="L")
+
     def _degrade_manifest_image(self, image: Image.Image) -> Image.Image:
         degraded = image.resize(self.input_size, Image.Resampling.BILINEAR)
         degraded = degraded.rotate(
@@ -264,10 +346,13 @@ class SegData(Dataset):
         return Image.fromarray((array * 255.0).astype(np.uint8), mode="L")
 
     def _get_manifest_pair(self, item: Dict) -> Tuple[Tensor, Tensor]:
-        clean = self._load_grayscale(item["input_path"])
+        clean = self._normalize_manifest_clean(self._load_grayscale(item["input_path"]))
         input_image = self._degrade_manifest_image(clean)
         input_tensor = self._image_to_tensor(input_image, self.input_size)
         target_tensor = self._image_to_tensor(clean, self.output_size)
+        if settings.hybrid_target:
+            auxiliary_tensor = 1.0 - target_tensor
+            return input_tensor, (target_tensor, auxiliary_tensor)
         return input_tensor, target_tensor
 
     def _get_legacy_pair(self, item: Dict) -> Tuple[Tensor, Tensor]:
@@ -280,7 +365,7 @@ class SegData(Dataset):
         label = settings.letter_to_idx[item["label"]]
 
         if item["source"] == "manifest":
-            clean = self._load_grayscale(item["input_path"])
+            clean = self._normalize_manifest_clean(self._load_grayscale(item["input_path"]))
             input_tensor = self._image_to_tensor(self._degrade_manifest_image(clean), self.input_size)
         else:
             input_tensor = self._image_to_tensor(self._load_grayscale(item["input_path"]), self.input_size)
@@ -297,12 +382,24 @@ def collate_fn(batch):
         return inputs, labels
 
     if isinstance(labels[0], tuple):
-        masks, class_labels = zip(*labels)
-        masks = torch.stack(masks)
-        class_labels = torch.tensor(class_labels, dtype=torch.long)
-        return inputs, (masks, class_labels)
+        return inputs, _collate_nested_targets(labels)
 
     raise TypeError(f"Unexpected label type: {type(labels[0])}")
+
+
+def _collate_nested_targets(values):
+    first = values[0]
+
+    if torch.is_tensor(first):
+        return torch.stack(values)
+
+    if isinstance(first, int):
+        return torch.tensor(values, dtype=torch.long)
+
+    if isinstance(first, tuple):
+        return tuple(_collate_nested_targets(items) for items in zip(*values))
+
+    raise TypeError(f"Unexpected nested target type: {type(first)}")
 
 
 def create_loader(
