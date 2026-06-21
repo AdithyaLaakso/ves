@@ -42,7 +42,11 @@ class MetaLoss(nn.Module):
 
     @torch.compile
     def forward(self, pred, target, epoch=0):
-        after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], target[0])
+        segmentation_target = target
+        while isinstance(segmentation_target, tuple):
+            segmentation_target = segmentation_target[0]
+
+        after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], segmentation_target[0])
         a_c = 0
         if settings.mode == settings.MULTITASK or settings.mode == settings.CLASSIFICATION:
             cw = settings.loss_settings.class_weight + (self.global_step * settings.loss_settings.class_weight_delta)

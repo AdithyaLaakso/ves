@@ -135,6 +135,27 @@ class DataTransferTests(unittest.TestCase):
         finally:
             settings.hybrid_target = original_hybrid
 
+    def test_meta_loss_uses_primary_target_from_nested_tuple(self):
+        import loss
+        import settings
+
+        primary_target = torch.zeros(1, 1, 1, 2, 2)
+        auxiliary_target = torch.ones(1, 1, 1, 2, 2)
+        prediction = torch.zeros(1, 1, 1, 2, 2)
+
+        original_mode = settings.mode
+        try:
+            settings.mode = settings.RECONSTRUCTION
+            with patch.object(loss, "SummaryWriter") as mock_writer:
+                mock_writer.return_value = type("WriterStub", (), {"add_scalar": lambda *args, **kwargs: None})()
+                criterion = loss.MetaLoss()
+
+                total_loss = criterion(prediction, ((primary_target, auxiliary_target),), epoch=0)
+
+            self.assertTrue(torch.is_tensor(total_loss))
+        finally:
+            settings.mode = original_mode
+
 
 class ManifestPreflightTests(unittest.TestCase):
     def test_manifest_preflight_reports_missing_paths(self):
