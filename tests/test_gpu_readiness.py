@@ -1,4 +1,6 @@
 import json
+import importlib
+import os
 import sys
 import subprocess
 import tempfile
@@ -139,8 +141,8 @@ class DataTransferTests(unittest.TestCase):
         import loss
         import settings
 
-        primary_target = torch.zeros(1, 1, 1, 2, 2)
-        auxiliary_target = torch.ones(1, 1, 1, 2, 2)
+        primary_target = torch.zeros(1, 1, 2, 2)
+        auxiliary_target = torch.ones(1, 1, 2, 2)
         prediction = torch.zeros(1, 1, 1, 2, 2)
 
         original_mode = settings.mode
@@ -154,6 +156,101 @@ class DataTransferTests(unittest.TestCase):
 
             self.assertTrue(torch.is_tensor(total_loss))
         finally:
+            settings.mode = original_mode
+
+    def test_hybrid_mode_model_returns_primary_and_auxiliary_outputs(self):
+        import model as model_module
+        import settings
+
+        original_env = {
+            "VES_HYBRID_TARGET": os.environ.get("VES_HYBRID_TARGET"),
+            "VES_DEVICE": os.environ.get("VES_DEVICE"),
+            "VES_FORCE_CPU": os.environ.get("VES_FORCE_CPU"),
+            "VES_SIZE_PROFILE": os.environ.get("VES_SIZE_PROFILE"),
+        }
+
+        try:
+            os.environ["VES_HYBRID_TARGET"] = "1"
+            os.environ["VES_FORCE_CPU"] = "1"
+            os.environ["VES_DEVICE"] = "cpu"
+            os.environ["VES_SIZE_PROFILE"] = "64"
+
+            settings = importlib.reload(settings)
+            settings.mode = settings.RECONSTRUCTION
+            settings.embed_size = 16
+            settings.num_blocks = 1
+            settings.num_heads = 4
+            settings.dropout = 0.0
+            settings.use_gradient = False
+            model_module = importlib.reload(model_module)
+
+            model = model_module.build_model(device=torch.device("cpu"))
+            model.eval()
+
+            inputs = torch.zeros(2, 1, settings.input_size, settings.input_size)
+            outputs = model(inputs)
+
+            self.assertIsInstance(outputs, tuple)
+            self.assertEqual(len(outputs), 2)
+            self.assertEqual(outputs[0].shape, outputs[1].shape)
+            self.assertEqual(
+                outputs[0].shape,
+                (2, settings.out_channels, settings.output_size, settings.output_size),
+            )
+        finally:
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+            importlib.reload(settings)
+            importlib.reload(model_module)
+
+    def test_hybrid_target_loss_combines_primary_and_auxiliary_branches(self):
+        import loss
+        import settings
+
+        class StubBinaryLoss(torch.nn.Module):
+            def __init__(self, value):
+                super().__init__()
+                self.value = value
+
+            def forward(self, *args, **kwargs):
+                return torch.tensor(self.value), None
+
+        original_weight = settings.aux_target_weight
+        try:
+            settings.aux_target_weight = 0.5
+            criterion = loss.HybridTargetLoss()
+            criterion.primary_loss = StubBinaryLoss(2.0)
+            criterion.auxiliary_loss = StubBinaryLoss(3.0)
+
+            total_loss = criterion(
+                (torch.zeros(1, 1, 2, 2), torch.zeros(1, 1, 2, 2)),
+                (torch.zeros(1, 1, 2, 2), torch.zeros(1, 1, 2, 2)),
+            )
+
+            self.assertTrue(torch.is_tensor(total_loss))
+            self.assertAlmostEqual(float(total_loss.item()), 3.5)
+        finally:
+            settings.aux_target_weight = original_weight
+
+    def test_build_criterion_prefers_hybrid_loss_when_enabled(self):
+        import loss
+        import settings
+        import train_reconstruction
+
+        original_hybrid = settings.hybrid_target
+        original_mode = settings.mode
+        try:
+            settings.hybrid_target = True
+            settings.mode = settings.RECONSTRUCTION
+
+            criterion = train_reconstruction.build_criterion()
+
+            self.assertIsInstance(criterion, loss.HybridTargetLoss)
+        finally:
+            settings.hybrid_target = original_hybrid
             settings.mode = original_mode
 
 

@@ -326,6 +326,7 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
         self.dropout = settings.dropout
         self.patch_sizes = settings.patch_sizes
         self.use_gradient_checkpointing = use_gradient_checkpointing
+        self.hybrid_target = settings.hybrid_target
 
         # Multiscale patch embedding
         self.encoder = MultiScalePatchEmbed(embed_dim=self.embed_size, in_chans=self.in_channels)
@@ -352,6 +353,8 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
 
         # Multiscale decoder for segmentation
         self.decoder = MultiScaleDecoder(embed_dim=self.embed_size, out_chans=self.out_channels)
+        if self.hybrid_target:
+            self.aux_decoder = MultiScaleDecoder(embed_dim=self.embed_size, out_chans=self.out_channels)
 
         # Classification head (hybrid: tokens + segmentation map)
         if settings.mode == settings.MULTITASK:
@@ -384,6 +387,11 @@ class VisionTransformerForSegmentationMultiScale(nn.Module):
         # Decode segmentation map
         out = self.decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
         out = F.interpolate(out, size=(self.output_size, self.output_size), mode="bilinear")
+
+        if self.hybrid_target and settings.mode == settings.RECONSTRUCTION:
+            aux_out = self.aux_decoder(processed_tokens, HcWc, HfWf, mask_flat, B)
+            aux_out = F.interpolate(aux_out, size=(self.output_size, self.output_size), mode="bilinear")
+            return out, aux_out
 
         if settings.mode == settings.MULTITASK:
             label = self.classifier(processed_tokens, out, x)  # <-- pass both

@@ -11,7 +11,7 @@ from torch.utils.data import Subset
 import dataset
 import settings
 import training_recovery
-from loss import MetaLoss
+from loss import HybridTargetLoss, MetaLoss
 from model import build_model
 from torch.amp.grad_scaler import GradScaler
 
@@ -46,6 +46,14 @@ def move_batch_to_device(inputs, targets, device):
         targets = targets.to(device, non_blocking=non_blocking)
 
     return inputs, targets
+
+
+def build_criterion():
+    if settings.mode == settings.CLASSIFICATION:
+        return torch.nn.CrossEntropyLoss()
+    if settings.hybrid_target:
+        return HybridTargetLoss()
+    return MetaLoss()
 
 
 def signal_handler(sig, frame):
@@ -85,7 +93,16 @@ def train_epoch(
         inputs, targets = move_batch_to_device(inputs, targets, device)
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, targets, epoch=epoch)
+        if settings.hybrid_target and isinstance(outputs, tuple) and isinstance(targets, tuple):
+            primary_output, auxiliary_output = outputs
+            primary_target, auxiliary_target = targets
+            loss = criterion(
+                (primary_output, auxiliary_output),
+                (primary_target, auxiliary_target),
+                epoch=epoch,
+            )
+        else:
+            loss = criterion(outputs, targets, epoch=epoch)
 
         batch_size = inputs.size(0)
         scaler.scale(loss).backward()
@@ -149,7 +166,16 @@ def evaluate_epoch(model, loader, criterion, epoch=0):
         for inputs, targets in loader:
             inputs, targets = move_batch_to_device(inputs, targets, device)
             outputs = model(inputs)
-            loss = criterion(outputs, targets, epoch=epoch)
+            if settings.hybrid_target and isinstance(outputs, tuple) and isinstance(targets, tuple):
+                primary_output, auxiliary_output = outputs
+                primary_target, auxiliary_target = targets
+                loss = criterion(
+                    (primary_output, auxiliary_output),
+                    (primary_target, auxiliary_target),
+                    epoch=epoch,
+                )
+            else:
+                loss = criterion(outputs, targets, epoch=epoch)
 
             batch_size = inputs.size(0)
             total_loss += loss.item() * batch_size
@@ -260,10 +286,7 @@ def train_model():
 
     compiled_train_epoch = train_epoch
     compiled_evaluate_epoch = evaluate_epoch
-    criterion = MetaLoss()
-
-    if settings.mode == settings.CLASSIFICATION:
-        criterion = torch.nn.CrossEntropyLoss()
+    criterion = build_criterion()
 
     if settings.resume_training_state:
         resume_state = training_recovery.load_recovery_checkpoint(

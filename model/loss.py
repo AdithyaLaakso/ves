@@ -10,6 +10,12 @@ except ImportError:
 
 epsilon = 1e-6
 
+
+def _unwrap_singleton_tuple(value):
+    while isinstance(value, tuple) and len(value) == 1:
+        value = value[0]
+    return value
+
 class MetaLoss(nn.Module):
     def __init__(self):
         super().__init__()
@@ -42,9 +48,7 @@ class MetaLoss(nn.Module):
 
     @torch.compile
     def forward(self, pred, target, epoch=0):
-        segmentation_target = target
-        while isinstance(segmentation_target, tuple):
-            segmentation_target = segmentation_target[0]
+        segmentation_target = _unwrap_singleton_tuple(target)
 
         after, (a_d, a_b, a_f, a_m) = self.BSL(pred[0], segmentation_target[0])
         a_c = 0
@@ -89,6 +93,32 @@ class MetaLoss(nn.Module):
             self.writer.add_scalar("Loss/Classification", mean_c / self.global_step, self.global_step)
 
         self.writer.add_scalar("Loss/total", mean_total / self.global_step, self.global_step)
+
+
+class HybridMetaLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.primary_loss = BinarySegmentationLoss()
+        self.auxiliary_loss = BinarySegmentationLoss()
+        self.aux_weight = settings.aux_target_weight
+
+    def forward(self, pred, target, epoch=0):
+        pred = _unwrap_singleton_tuple(pred)
+        target = _unwrap_singleton_tuple(target)
+
+        if not isinstance(pred, tuple) or not isinstance(target, tuple):
+            raise TypeError("HybridMetaLoss expects tuple predictions and tuple targets")
+
+        primary_pred, auxiliary_pred = pred
+        primary_target, auxiliary_target = target
+
+        primary_total, _ = self.primary_loss(primary_pred, primary_target)
+        auxiliary_total, _ = self.auxiliary_loss(auxiliary_pred, auxiliary_target)
+
+        return primary_total + (self.aux_weight * auxiliary_total)
+
+
+HybridTargetLoss = HybridMetaLoss
 
 class BinarySegmentationLoss(nn.Module):
     def __init__(self):
