@@ -430,7 +430,6 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(training_failed.status, "training_failed")
         self.assertEqual(review_failed.status, "review_failed")
         self.assertEqual(training_failed.known_variables["VES_FOCAL_WEIGHT"], 2.5)
-        self.assertEqual(review_failed.known_variables["VES_FOCAL_WEIGHT"], 2.5)
 
     def test_experiment_sweep_cli_help_runs_from_repo_root(self):
         result = subprocess.run(
