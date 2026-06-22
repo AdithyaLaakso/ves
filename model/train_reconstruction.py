@@ -241,7 +241,7 @@ def train_model():
             optimizer=optimizer,
             scheduler=scheduler,
             scaler=scaler,
-            map_location=torch.device("cpu"),
+            map_location=device,
         )
         resume_epoch = int(resume_state.get("epoch", 0))
         resume_batch = int(resume_state.get("next_batch", 0))

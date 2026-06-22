@@ -37,16 +37,9 @@ def restore_rng_state(state: Optional[Dict[str, Any]]) -> None:
     if "numpy" in state:
         np.random.set_state(state["numpy"])
     if "torch" in state:
-        torch_state = state["torch"]
-        if torch.is_tensor(torch_state):
-            torch_state = torch_state.detach().cpu()
-        torch.set_rng_state(torch_state)
+        torch.set_rng_state(state["torch"])
     if "torch_cuda" in state and torch.cuda.is_available():
-        cuda_states = [
-            cuda_state.detach().cpu() if torch.is_tensor(cuda_state) else cuda_state
-            for cuda_state in state["torch_cuda"]
-        ]
-        torch.cuda.set_rng_state_all(cuda_states)
+        torch.cuda.set_rng_state_all(state["torch_cuda"])
 
 
 def _numbered_checkpoint_path(checkpoint_dir: Path, epoch: int, next_batch: int) -> Path:

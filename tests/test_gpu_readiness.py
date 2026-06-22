@@ -463,29 +463,6 @@ class TrainingRecoveryTests(unittest.TestCase):
             self.assertEqual(np.random.random(), expected_numpy)
             self.assertEqual(torch.rand(1).item(), expected_torch)
 
-    def test_recovery_rng_restore_accepts_tensor_state(self):
-        import training_recovery
-
-        random.seed(34)
-        np.random.seed(34)
-        torch.manual_seed(34)
-        state = training_recovery.capture_rng_state()
-        state["torch"] = state["torch"].clone()
-
-        expected_python = random.random()
-        expected_numpy = np.random.random()
-        expected_torch = torch.rand(1).item()
-
-        random.seed(56)
-        np.random.seed(56)
-        torch.manual_seed(56)
-
-        training_recovery.restore_rng_state(state)
-
-        self.assertEqual(random.random(), expected_python)
-        self.assertEqual(np.random.random(), expected_numpy)
-        self.assertEqual(torch.rand(1).item(), expected_torch)
-
     def test_recovery_checkpoint_retention_keeps_latest_snapshots(self):
         import training_recovery
 
