@@ -1,6 +1,0 @@
-numpy
-scipy
-opencv-python
-matplotlib
-tensorboard
-pillow

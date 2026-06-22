@@ -8,8 +8,7 @@ Here are some samples of what it is capable of:
 ![sample2](samples/sample2.png)
 
 To Install Dependencies:
-1. For a normal local environment: ```pip install -r requirements.txt```
-2. On an AWS PyTorch Deep Learning AMI, keep the AMI's bundled GPU PyTorch build and install only the non-Torch runtime packages: ```/opt/pytorch/bin/python -m pip install -r requirements-dlami.txt```
+1. ```pip install -r requirements.txt```
 
 To Prepare Data For The Revised ALPUB_v2 Pipeline:
 1. Make sure the extracted `ALPUB_v2/images/...` tree exists in the repo root.
@@ -42,23 +41,17 @@ To train:
 6. The script now auto-detects whether CUDA is available:
    - on CUDA systems, it defaults to a larger GPU-oriented validation run
    - on non-CUDA systems, it falls back to the smaller CPU smoke-test path
-7. The script prints the effective run mode at startup so you can confirm whether it is using CPU/GPU, smoke-test/fuller validation settings, debug CUDA mode, the run directory, and whether visualization is enabled.
+7. The script prints the effective run mode at startup so you can confirm whether it is using CPU/GPU, smoke-test/fuller validation settings, and whether visualization is enabled.
 8. If TensorBoard is enabled, you may view the loss chart in your browser at `localhost:6006/`
 9. When the model is finished, it will display results if visualization was enabled.
 
-The setup script writes each run to a unique directory under `model/runs/` by default. Set `VES_RUN_DIR=/path/to/run` to choose a specific output location.
+The model will save the weights to the specified location (default `new.pth` inside the `model/` directory).
 
-The model will save the final weights as `new.pth` in the run directory, with per-epoch checkpoints under `checkpoints/` and TensorBoard logs under `logs/`.
-
-Useful run controls:
-1. `VES_SEED=42` controls Python, NumPy, PyTorch, subset selection, and weighted sampling seeds.
-2. `VES_DEBUG_CUDA=1` enables CUDA launch blocking and verbose Dynamo logging for diagnostics.
-3. `VES_ALLOW_TF32=0` disables TF32 if exact float32 behavior is needed for comparison.
-4. `VES_HARD_TIMEOUT=0` disables the setup-script hard timeout. Non-smoke runs default to no hard timeout; smoke runs default to 1200 seconds.
+The script will automatically start logging to the specified log directory (default logs/).
 
 To view the logs of a previous run:
 1. `cd model/`
-2. `python -m tensorboard.main --logdir ./runs/<run_id>/logs --port=6006`
+2. `python -m tensorboard.main --logdir ./logs --port=6006`
 3. Navigate to `localhost:6006` in your browser.
 
 To run inference visualizer on a saved model using the preset data:

@@ -3,7 +3,6 @@ import random
 import signal
 import sys
 
-import numpy as np
 import torch
 from torch.utils.data import Subset, WeightedRandomSampler
 
@@ -19,31 +18,6 @@ faulthandler.enable()
 faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
 device = settings.device
-
-
-def seed_everything(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def move_batch_to_device(inputs, targets, device):
-    non_blocking = device.type == "cuda"
-    inputs = inputs.to(device, non_blocking=non_blocking)
-
-    if isinstance(targets, tuple):
-        targets = tuple(
-            target.to(device, non_blocking=non_blocking)
-            if torch.is_tensor(target)
-            else target
-            for target in targets
-        )
-    elif torch.is_tensor(targets):
-        targets = targets.to(device, non_blocking=non_blocking)
-
-    return inputs, targets
 
 
 def signal_handler(sig, frame):
@@ -64,7 +38,6 @@ def train_epoch(model, loader, optimizer, criterion, scaler, epoch=0):
     model.train()
 
     for inputs, targets in loader:
-        inputs, targets = move_batch_to_device(inputs, targets, device)
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, targets, epoch=epoch)
@@ -88,7 +61,6 @@ def evaluate_epoch(model, loader, criterion, epoch=0):
     model.eval()
     with torch.no_grad():
         for inputs, targets in loader:
-            inputs, targets = move_batch_to_device(inputs, targets, device)
             outputs = model(inputs)
             loss = criterion(outputs, targets, epoch=epoch)
 
@@ -105,8 +77,7 @@ def split_indices(data):
         raise ValueError("Dataset is empty!")
 
     if not settings.split_by_document:
-        generator = torch.Generator().manual_seed(settings.seed)
-        shuffled = torch.randperm(n_total, generator=generator)
+        shuffled = torch.randperm(n_total)
         n_train = int(settings.segmentation_hyperparams.train_percent * n_total)
         train_idx = shuffled[:n_train].tolist()
         test_idx = shuffled[n_train:].tolist()
@@ -141,17 +112,14 @@ def build_sampler(data, indices):
         return None
 
     subset_weights = torch.as_tensor([sample_weights[i] for i in indices], dtype=torch.double)
-    generator = torch.Generator().manual_seed(settings.seed)
     return WeightedRandomSampler(
         weights=subset_weights,
         num_samples=len(indices),
         replacement=True,
-        generator=generator,
     )
 
 
 def train_model():
-    seed_everything(settings.seed)
     model = build_model()
     model.to(device)
 

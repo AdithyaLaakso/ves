@@ -35,7 +35,6 @@ All note-style files listed below now live in `docs/Notes/`.
 - `synthetic_vs_manifest_paper_defense.txt`
 - `synthetic_vs_manifest_rationale_table.txt`
 - `anvil_vs_bigred200_access_note.txt`
-- `aws_gpu_testing_setup_note.txt`
 
 ## Other Project Documents
 
