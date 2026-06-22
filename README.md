@@ -77,12 +77,3 @@ To run tiled inference on a large image:
 Note: the model has only been tested on Linux. If there is interest in windows/OSX support, add an issue or contact on discord.
 
 If you have any questions, feel free to leave an issue or reach out on discord.
-
-## License
-
-Project-authored source code, documentation, and configuration files are
-licensed under the MIT License. See [LICENSE](LICENSE).
-
-Third-party datasets, generated data, sample images, model weights, and
-external assets retain their own terms and are not relicensed by the project
-license. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
