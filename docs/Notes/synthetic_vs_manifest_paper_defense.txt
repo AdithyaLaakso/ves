@@ -1,7 +1,0 @@
-Shorter Plain-Language Defense for the Paper
-
-Earlier versions of the workflow relied more heavily on synthetic generation. That approach was useful when more relevant training material was not yet integrated, but it also embedded strong assumptions about letter morphology, degradation, and background structure. The revised pipeline instead uses a manifest-based corpus of real ancient Greek uncial images and applies controlled degradation during training, preserving the advantages of synthetic corruption without relying on wholly synthetic exemplars. Mild sampler-level weighting is used only to reduce domination by the most common classes; it does not alter the underlying corpus itself.
-
-Alternative version:
-
-The shift away from a purely synthetic training basis was methodological rather than cosmetic. Once a more domain-relevant uncial corpus was available, it became more defensible to train on real exemplars and use synthetic degradation as augmentation rather than as the sole source of supervision. This change reduces dependence on simulator assumptions while still allowing controlled corruption during reconstruction training.
