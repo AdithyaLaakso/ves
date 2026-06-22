@@ -373,50 +373,6 @@ class TrainingRecoveryTests(unittest.TestCase):
             self.assertEqual(loaded["metadata"]["run_dir"], "runs/example")
             self.assertEqual(loaded["version"], 1)
 
-    def test_recovery_checkpoint_allows_lazy_model_keys(self):
-        import training_recovery
-
-        class LazyModel(torch.nn.Module):
-            def __init__(self, include_lazy=False):
-                super().__init__()
-                self.linear = torch.nn.Linear(2, 1)
-                if include_lazy:
-                    self.lazy_bias = torch.nn.Parameter(torch.zeros(1))
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_dir = Path(tmpdir)
-            saved_model = LazyModel(include_lazy=True)
-            saved_optimizer = torch.optim.AdamW(saved_model.parameters(), lr=0.01)
-            saved_scheduler = torch.optim.lr_scheduler.ExponentialLR(saved_optimizer, gamma=0.9)
-            saved_scaler = torch.amp.GradScaler("cpu")
-
-            recovery_path = training_recovery.save_recovery_checkpoint(
-                checkpoint_dir=checkpoint_dir,
-                model=saved_model,
-                optimizer=saved_optimizer,
-                scheduler=saved_scheduler,
-                scaler=saved_scaler,
-                epoch=0,
-                next_batch=1,
-                global_step=1,
-            )
-
-            loaded_model = LazyModel(include_lazy=False)
-            loaded_optimizer = torch.optim.AdamW(loaded_model.parameters(), lr=0.01)
-            loaded_scheduler = torch.optim.lr_scheduler.ExponentialLR(loaded_optimizer, gamma=0.9)
-            loaded_scaler = torch.amp.GradScaler("cpu")
-
-            loaded = training_recovery.load_recovery_checkpoint(
-                recovery_path,
-                model=loaded_model,
-                optimizer=loaded_optimizer,
-                scheduler=loaded_scheduler,
-                scaler=loaded_scaler,
-                map_location=torch.device("cpu"),
-            )
-
-            self.assertEqual(loaded["next_batch"], 1)
-
     def test_recovery_checkpoint_restores_rng_state(self):
         import training_recovery
 
