@@ -1,7 +1,7 @@
 import json
 import os
 import subprocess
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -199,80 +199,6 @@ def write_experiment_manifest(config: SweepConfig, plans: Sequence[ProbePlan], p
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _infer_category(path: Path) -> str:
-    name = path.name
-    if name.startswith("20") and "T" in name:
-        return "full-training"
-    if "focal" in name or "loss" in name:
-        return "local-probe"
-    if name.startswith("visual_review"):
-        return "visual-review"
-    return "run"
-
-
-def discover_existing_runs(runs_dir: Path) -> List[InventoryEntry]:
-    runs_dir = Path(runs_dir)
-    if not runs_dir.exists():
-        return []
-
-    ignored = {"comparisons", "logs", "experiments", "__pycache__"}
-    entries: List[InventoryEntry] = []
-    for child in sorted(path for path in runs_dir.iterdir() if path.is_dir()):
-        if child.name in ignored:
-            continue
-        checkpoint = child / "new.pth"
-        visual_review = child / "visual_review"
-        review_paths = [str(visual_review)] if visual_review.exists() else []
-        entries.append(
-            InventoryEntry(
-                id=child.name,
-                category=_infer_category(child),
-                path=str(child),
-                checkpoint=str(checkpoint) if checkpoint.exists() else None,
-                review_paths=review_paths,
-                metric_paths=[],
-                known_variables={},
-                status="indexed",
-                notes="Indexed from existing folder; variables not inferred from folder name.",
-            )
-        )
-    return entries
-
-
-def _entry_to_dict(entry: InventoryEntry) -> Dict[str, object]:
-    return asdict(entry)
-
-
-def write_inventory(runs_dir: Path, entries: Sequence[InventoryEntry]) -> None:
-    runs_dir = Path(runs_dir)
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "runs": [_entry_to_dict(entry) for entry in entries],
-    }
-    (runs_dir / "run_inventory.json").write_text(
-        json.dumps(payload, indent=2),
-        encoding="utf-8",
-    )
-
-    lines = [
-        "# Run Index",
-        "",
-        "This file indexes run outputs without changing checkpoint, log, metric, or review contents.",
-        "",
-        "| ID | Category | Status | Checkpoint | Notes |",
-        "| --- | --- | --- | --- | --- |",
-    ]
-    for entry in entries:
-        checkpoint = entry.checkpoint or ""
-        notes = entry.notes.replace("|", "\\|")
-        lines.append(
-            f"| {entry.id} | {entry.category} | {entry.status} | {checkpoint} | {notes} |"
-        )
-    (runs_dir / "RUN_INDEX.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def run_command(command: Sequence[str], *, cwd: Path, env: Dict[str, str]) -> CommandResult:
