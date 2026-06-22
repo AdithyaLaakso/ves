@@ -280,7 +280,7 @@ def inventory_dir_for_experiment(experiment_dir: Path) -> Path:
     experiment_dir = Path(experiment_dir)
     if experiment_dir.parent.name == "experiments":
         return experiment_dir.parent.parent
-    return experiment_dir
+    return MODEL_DIR / "runs"
 
 
 def run_sweep(
