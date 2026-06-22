@@ -61,97 +61,6 @@ def _ssim_like(pred: torch.Tensor, target: torch.Tensor) -> float:
     return float(score.item())
 
 
-def _otsu_threshold_tensor(image: torch.Tensor) -> float:
-    values = image.detach().cpu().float().clamp(0.0, 1.0).flatten()
-    if values.numel() == 0:
-        return 0.5
-
-    bins = torch.clamp((values * 255.0).round().long(), 0, 255)
-    hist = torch.bincount(bins, minlength=256).float()
-    total = hist.sum()
-    if total <= 0:
-        return 0.5
-
-    bin_values = torch.arange(256, dtype=torch.float32)
-    sum_total = (bin_values * hist).sum()
-    weight_background = torch.tensor(0.0)
-    sum_background = torch.tensor(0.0)
-    max_between = torch.tensor(-1.0)
-    best_threshold = 128
-
-    for threshold in range(256):
-        count = hist[threshold]
-        weight_background = weight_background + count
-        if weight_background <= 0:
-            continue
-        weight_foreground = total - weight_background
-        if weight_foreground <= 0:
-            break
-        sum_background = sum_background + bin_values[threshold] * count
-        mean_background = sum_background / weight_background
-        mean_foreground = (sum_total - sum_background) / weight_foreground
-        between = weight_background * weight_foreground * (mean_background - mean_foreground) ** 2
-        if between > max_between:
-            max_between = between
-            best_threshold = threshold
-
-    return best_threshold / 255.0
-
-
-def _binary_ink_metrics(
-    pred_ink: torch.Tensor,
-    target_ink: torch.Tensor,
-    prefix: str = "",
-) -> Dict[str, float]:
-    intersection = torch.logical_and(pred_ink, target_ink).sum().float()
-    union = torch.logical_or(pred_ink, target_ink).sum().float()
-    pred_ink_count = pred_ink.sum().float()
-    target_ink_count = target_ink.sum().float()
-    false_ink = torch.logical_and(pred_ink, ~target_ink).sum().float()
-    missed_ink = torch.logical_and(~pred_ink, target_ink).sum().float()
-
-    h, w = target_ink.shape[-2:]
-    y0, y1 = h // 4, h - h // 4
-    x0, x1 = w // 4, w - w // 4
-    interior_pred_ink = pred_ink[y0:y1, x0:x1].float().mean()
-    interior_target_ink = target_ink[y0:y1, x0:x1].float().mean()
-
-    eps = torch.tensor(1e-6)
-    return {
-        f"{prefix}ink_iou": float((intersection / (union + eps)).item()),
-        f"{prefix}ink_precision": float((intersection / (pred_ink_count + eps)).item()),
-        f"{prefix}ink_recall": float((intersection / (target_ink_count + eps)).item()),
-        f"{prefix}pred_ink_fraction": float(pred_ink.float().mean().item()),
-        f"{prefix}target_ink_fraction": float(target_ink.float().mean().item()),
-        f"{prefix}ink_fraction_abs_diff": float(
-            torch.abs(pred_ink.float().mean() - target_ink.float().mean()).item()
-        ),
-        f"{prefix}false_ink_fraction": float((false_ink / pred_ink.numel()).item()),
-        f"{prefix}missed_ink_fraction": float((missed_ink / pred_ink.numel()).item()),
-        f"{prefix}interior_pred_ink_fraction": float(interior_pred_ink.item()),
-        f"{prefix}interior_target_ink_fraction": float(interior_target_ink.item()),
-        f"{prefix}interior_ink_abs_diff": float(
-            torch.abs(interior_pred_ink - interior_target_ink).item()
-        ),
-    }
-
-
-def _soft_ink_metrics(pred: torch.Tensor, target: torch.Tensor) -> Dict[str, float]:
-    pred_ink = 1.0 - pred
-    target_ink = 1.0 - target
-    intersection = torch.minimum(pred_ink, target_ink).sum()
-    union = torch.maximum(pred_ink, target_ink).sum()
-    pred_sum = pred_ink.sum()
-    target_sum = target_ink.sum()
-    eps = torch.tensor(1e-6)
-
-    return {
-        "soft_ink_iou": float((intersection / (union + eps)).item()),
-        "soft_ink_dice": float(((2.0 * intersection) / (pred_sum + target_sum + eps)).item()),
-        "soft_ink_abs_diff": float(torch.abs(pred_ink - target_ink).mean().item()),
-    }
-
-
 def _image_metrics(pred: torch.Tensor, target: torch.Tensor) -> Dict[str, float]:
     pred = pred.detach().cpu().float().squeeze()
     target = target.detach().cpu().float().squeeze()
@@ -170,30 +79,39 @@ def _image_metrics(pred: torch.Tensor, target: torch.Tensor) -> Dict[str, float]
 
     pred_ink = pred < 0.5
     target_ink = target < 0.5
-    fixed_metrics = _binary_ink_metrics(pred_ink, target_ink)
-    fixed_aliases = {
-        f"fixed_0_5_{key}": value
-        for key, value in fixed_metrics.items()
-    }
+    intersection = torch.logical_and(pred_ink, target_ink).sum().float()
+    union = torch.logical_or(pred_ink, target_ink).sum().float()
+    pred_ink_count = pred_ink.sum().float()
+    target_ink_count = target_ink.sum().float()
+    false_ink = torch.logical_and(pred_ink, ~target_ink).sum().float()
+    missed_ink = torch.logical_and(~pred_ink, target_ink).sum().float()
 
-    otsu_pred_threshold = _otsu_threshold_tensor(pred)
-    otsu_target_threshold = _otsu_threshold_tensor(target)
-    otsu_metrics = _binary_ink_metrics(
-        pred <= otsu_pred_threshold,
-        target <= otsu_target_threshold,
-        prefix="otsu_",
-    )
+    h, w = target.shape[-2:]
+    y0, y1 = h // 4, h - h // 4
+    x0, x1 = w // 4, w - w // 4
+    interior_pred_ink = pred_ink[y0:y1, x0:x1].float().mean()
+    interior_target_ink = target_ink[y0:y1, x0:x1].float().mean()
 
+    eps = torch.tensor(1e-6)
     return {
         "mse": float(mse.item()),
         "mae": float(mae.item()),
         "ssim_like": _ssim_like(pred, target),
-        **fixed_metrics,
-        **fixed_aliases,
-        "otsu_pred_threshold": otsu_pred_threshold,
-        "otsu_target_threshold": otsu_target_threshold,
-        **otsu_metrics,
-        **_soft_ink_metrics(pred, target),
+        "ink_iou": float((intersection / (union + eps)).item()),
+        "ink_precision": float((intersection / (pred_ink_count + eps)).item()),
+        "ink_recall": float((intersection / (target_ink_count + eps)).item()),
+        "pred_ink_fraction": float(pred_ink.float().mean().item()),
+        "target_ink_fraction": float(target_ink.float().mean().item()),
+        "ink_fraction_abs_diff": float(
+            torch.abs(pred_ink.float().mean() - target_ink.float().mean()).item()
+        ),
+        "false_ink_fraction": float((false_ink / pred_ink.numel()).item()),
+        "missed_ink_fraction": float((missed_ink / pred_ink.numel()).item()),
+        "interior_pred_ink_fraction": float(interior_pred_ink.item()),
+        "interior_target_ink_fraction": float(interior_target_ink.item()),
+        "interior_ink_abs_diff": float(
+            torch.abs(interior_pred_ink - interior_target_ink).item()
+        ),
     }
 
 
@@ -210,23 +128,8 @@ def _delta_direction(metric: str) -> int:
         "false_ink_fraction",
         "missed_ink_fraction",
         "interior_ink_abs_diff",
-        "otsu_ink_fraction_abs_diff",
-        "otsu_false_ink_fraction",
-        "otsu_missed_ink_fraction",
-        "otsu_interior_ink_abs_diff",
-        "soft_ink_abs_diff",
     }
-    higher_is_better = {
-        "ssim_like",
-        "ink_iou",
-        "ink_precision",
-        "ink_recall",
-        "otsu_ink_iou",
-        "otsu_ink_precision",
-        "otsu_ink_recall",
-        "soft_ink_iou",
-        "soft_ink_dice",
-    }
+    higher_is_better = {"ssim_like", "ink_iou", "ink_precision", "ink_recall"}
     if metric in lower_is_better:
         return -1
     if metric in higher_is_better:
@@ -252,12 +155,6 @@ def _write_markdown(path: Path, summary: List[Dict[str, object]]) -> None:
         "ink_iou",
         "ink_precision",
         "ink_recall",
-        "otsu_ink_iou",
-        "otsu_ink_precision",
-        "otsu_ink_recall",
-        "soft_ink_iou",
-        "soft_ink_dice",
-        "soft_ink_abs_diff",
         "false_ink_fraction",
         "missed_ink_fraction",
         "interior_ink_abs_diff",
