@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.data import Subset
+from torch.utils.data import Subset, WeightedRandomSampler
 
 import dataset
 import settings
@@ -69,7 +69,6 @@ def train_epoch(
     *,
     epoch=0,
     start_batch=0,
-    batch_number_offset=0,
     global_step=0,
     train_loss_total=0.0,
     train_loss_samples=0,
@@ -108,7 +107,6 @@ def train_epoch(
             and elapsed_minutes >= settings.step_checkpoint_every_minutes
         )
         if should_save_for_batch or should_save_for_time:
-            next_batch = batch_number_offset + batch_idx + 1
             recovery_path = training_recovery.save_recovery_checkpoint(
                 checkpoint_dir=settings.save_to_dir,
                 model=model,
@@ -116,7 +114,7 @@ def train_epoch(
                 scheduler=scheduler,
                 scaler=scaler,
                 epoch=epoch,
-                next_batch=next_batch,
+                next_batch=batch_idx + 1,
                 global_step=global_step,
                 train_loss_total=train_loss_total,
                 train_loss_samples=train_loss_samples,
@@ -132,7 +130,7 @@ def train_epoch(
             )
             print(
                 "Saved recovery checkpoint "
-                f"epoch={epoch} next_batch={next_batch} "
+                f"epoch={epoch} next_batch={batch_idx + 1} "
                 f"global_step={global_step} -> {recovery_path}"
             )
             last_checkpoint_time = time.monotonic()
@@ -192,8 +190,9 @@ def split_indices(data):
 
 
 def build_sampler(data, indices):
-    # Kept for compatibility with older notes; training now precomputes epoch
-    # order directly so resume can slice instead of replaying skipped batches.
+    if not settings.sampler_strategy:
+        return None
+
     sample_weights = data.sample_weights(settings.sampler_strategy)
     if sample_weights is None:
         return None
@@ -206,36 +205,6 @@ def build_sampler(data, indices):
         replacement=True,
         generator=generator,
     )
-
-
-def build_train_order(data, indices, epoch=0):
-    if not indices:
-        return []
-
-    generator = torch.Generator().manual_seed(settings.seed + epoch)
-
-    if settings.sampler_strategy:
-        sample_weights = data.sample_weights(settings.sampler_strategy)
-        if sample_weights is not None:
-            subset_weights = torch.as_tensor(
-                [sample_weights[i] for i in indices],
-                dtype=torch.double,
-            )
-            sampled_positions = torch.multinomial(
-                subset_weights,
-                num_samples=len(indices),
-                replacement=True,
-                generator=generator,
-            )
-            return [indices[position] for position in sampled_positions.tolist()]
-
-    shuffled_positions = torch.randperm(len(indices), generator=generator).tolist()
-    return [indices[position] for position in shuffled_positions]
-
-
-def slice_train_order_for_resume(order, batch_size, next_batch):
-    start_sample = max(0, next_batch) * batch_size
-    return order[start_sample:]
 
 
 def train_model():
@@ -296,6 +265,14 @@ def train_model():
         print(f"training with {n_total} items")
 
         train_idx, test_idx = split_indices(data)
+        train_sampler = build_sampler(data, train_idx)
+
+        train_loader = dataset.create_loader(
+            Subset(data, train_idx),
+            batch_size=settings.segmentation_hyperparams.batch_size,
+            shuffle=train_sampler is None,
+            sampler=train_sampler,
+        )
 
         test_loader = dataset.create_loader(
             Subset(data, test_idx),
@@ -310,23 +287,6 @@ def train_model():
                 print(torch.cuda.memory_allocated() / 1e9, "GB allocated")
 
             start_batch = resume_batch if epoch == resume_epoch else 0
-            train_order = build_train_order(data, train_idx, epoch=epoch)
-            if start_batch:
-                train_order = slice_train_order_for_resume(
-                    train_order,
-                    batch_size=settings.segmentation_hyperparams.batch_size,
-                    next_batch=start_batch,
-                )
-                print(
-                    "Sliced training order for resume "
-                    f"at batch={start_batch}; remaining_samples={len(train_order)}"
-                )
-            train_loader = dataset.create_loader(
-                Subset(data, train_order),
-                batch_size=settings.segmentation_hyperparams.batch_size,
-                shuffle=False,
-                sampler=None,
-            )
             train_loss_total = resume_loss_total if epoch == resume_epoch else 0.0
             train_loss_samples = resume_loss_samples if epoch == resume_epoch else 0
             train_loss, global_step = compiled_train_epoch(
@@ -337,8 +297,7 @@ def train_model():
                 scaler,
                 scheduler,
                 epoch=epoch,
-                start_batch=0,
-                batch_number_offset=start_batch,
+                start_batch=start_batch,
                 global_step=global_step,
                 train_loss_total=train_loss_total,
                 train_loss_samples=train_loss_samples,
