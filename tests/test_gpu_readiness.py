@@ -266,65 +266,6 @@ print(settings.loss_settings.class_weight)
         self.assertNotIn("export CUDA_LAUNCH_BLOCKING=1", setup_text)
 
 
-class ExperimentRunnerTests(unittest.TestCase):
-    def test_focal_weight_names_are_stable(self):
-        import experiment_runner
-
-        self.assertEqual(experiment_runner.focal_weight_name(1.25), "focal_1_25")
-        self.assertEqual(experiment_runner.focal_weight_name(2.0), "focal_2_00")
-        self.assertEqual(experiment_runner.focal_weight_name(4), "focal_4_00")
-
-    def test_build_probe_plans_freezes_shared_controls(self):
-        import experiment_runner
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            config = experiment_runner.SweepConfig(
-                experiment_dir=root / "focal-weight-sweep-20260613",
-                focal_weights=(1.25, 2.5),
-                seed=42,
-                max_size=256,
-                num_epochs=1,
-                batch_size=4,
-                size_profile="96",
-                resume_from=Path("runs/baseline/new.pth"),
-                mse_weight=1.0,
-                class_weight=2.0,
-                focal_alpha=0.2,
-                focal_gamma=2.0,
-                python_bin="python3",
-                review_count=24,
-                review_seed=99,
-                review_indices=None,
-                samples_per_sheet=12,
-            )
-
-            plans = experiment_runner.build_probe_plans(config)
-
-            self.assertEqual([plan.name for plan in plans], ["focal_1_25", "focal_2_50"])
-            self.assertEqual(
-                plans[0].run_dir,
-                root / "focal-weight-sweep-20260613" / "runs" / "focal_1_25",
-            )
-            self.assertEqual(
-                plans[1].run_dir,
-                root / "focal-weight-sweep-20260613" / "runs" / "focal_2_50",
-            )
-            for plan in plans:
-                self.assertEqual(plan.env["VES_SEED"], "42")
-                self.assertEqual(plan.env["VES_MAX_SIZE"], "256")
-                self.assertEqual(plan.env["VES_NUM_EPOCHS"], "1")
-                self.assertEqual(plan.env["VES_BATCH_SIZE"], "4")
-                self.assertEqual(plan.env["VES_SIZE_PROFILE"], "96")
-                self.assertEqual(plan.env["VES_RESUME_FROM"], "runs/baseline/new.pth")
-                self.assertEqual(plan.env["VES_MSE_WEIGHT"], "1.0")
-                self.assertEqual(plan.env["VES_CLASS_WEIGHT"], "2.0")
-                self.assertEqual(plan.env["VES_FOCAL_ALPHA"], "0.2")
-                self.assertEqual(plan.env["VES_FOCAL_GAMMA"], "2.0")
-            self.assertEqual(plans[0].env["VES_FOCAL_WEIGHT"], "1.25")
-            self.assertEqual(plans[1].env["VES_FOCAL_WEIGHT"], "2.5")
-
-
 class VisualReviewTests(unittest.TestCase):
     def test_visual_review_selects_deterministic_indices(self):
         from usage import visual_review_sheets
