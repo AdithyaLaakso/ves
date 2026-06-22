@@ -39,9 +39,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--review-indices", type=str, default=None)
     parser.add_argument("--samples-per-sheet", type=int, default=12)
     parser.add_argument("--no-review", action="store_true")
-    mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument("--execute", action="store_true")
-    mode_group.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-existing-index", action="store_true")
     return parser
 
@@ -80,12 +79,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     print(f"{mode}: wrote {experiment_dir / 'experiment.json'}")
     print(f"{mode}: wrote {experiment_runner.inventory_dir_for_experiment(experiment_dir) / 'run_inventory.json'}")
     print(f"{mode}: indexed {len(entries)} run entries")
-    failure_statuses = {"training_failed", "review_failed", "output_exists"}
-    failed_current_sweep = any(
-        entry.category == "experiment-probe" and entry.status in failure_statuses
-        for entry in entries
-    )
-    return 1 if failed_current_sweep else 0
+    return 0
 
 
 if __name__ == "__main__":

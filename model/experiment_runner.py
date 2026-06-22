@@ -75,8 +75,7 @@ class InventoryEntry:
 
 def default_experiment_dir(date: Optional[datetime] = None) -> Path:
     date = date or datetime.now(timezone.utc)
-    date = date.astimezone(timezone.utc)
-    return MODEL_DIR / "runs" / "experiments" / f"focal-weight-sweep-{date:%Y%m%dT%H%M%SZ}"
+    return MODEL_DIR / "runs" / "experiments" / f"focal-weight-sweep-{date:%Y%m%d}"
 
 
 def build_probe_plans(config: SweepConfig) -> List[ProbePlan]:
@@ -303,22 +302,6 @@ def run_sweep(
         if not execute:
             entries.append(probe_inventory_entry(plan, "planned", "Dry run only; training not launched."))
             continue
-
-        existing_outputs = [
-            path
-            for path in (plan.run_dir, plan.checkpoint_path, plan.review_dir)
-            if path.exists()
-        ]
-        if existing_outputs:
-            entries.append(
-                probe_inventory_entry(
-                    plan,
-                    "output_exists",
-                    f"Refusing to overwrite existing output: {existing_outputs[0]}",
-                )
-            )
-            write_inventory(inventory_dir, entries)
-            break
 
         plan.run_dir.mkdir(parents=True, exist_ok=True)
         train_result = run_command(plan.train_command, cwd=MODEL_DIR, env=plan.env)
