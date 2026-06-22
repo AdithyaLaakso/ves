@@ -37,13 +37,8 @@ To train:
 5. Run the setup script:
    - standard: `./setup.zsh`
    - with TensorBoard: `VES_RUN_TENSORBOARD=1 ./setup.zsh`
-   - with visualization after training: `VES_RUN_VISUALIZE=1 ./setup.zsh`
-6. The script now auto-detects whether CUDA is available:
-   - on CUDA systems, it defaults to a larger GPU-oriented validation run
-   - on non-CUDA systems, it falls back to the smaller CPU smoke-test path
-7. The script prints the effective run mode at startup so you can confirm whether it is using CPU/GPU, smoke-test/fuller validation settings, and whether visualization is enabled.
-8. If TensorBoard is enabled, you may view the loss chart in your browser at `localhost:6006/`
-9. When the model is finished, it will display results if visualization was enabled.
+7. If TensorBoard is enabled, you may view the loss chart in your browser at `localhost:6006/`
+8. When the model is finished, it will display results
 
 The model will save the weights to the specified location (default `new.pth` inside the `model/` directory).
 
