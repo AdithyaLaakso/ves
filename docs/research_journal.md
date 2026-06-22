@@ -162,10 +162,6 @@ focal-1 baseline unless its original environment is verified from logs.
   `VES_FOCAL_WEIGHT=0.25`, `max_size=2048`, `num_epochs=1`, `batch_size=4`.
   The run completed in its own experiment directory and generated fixed-seed
   review sheets.
-- `20260619-focal-probe-concern-diagnostics`: computed concern-class metrics
-  and diagnostic sheets for `epoch2`, `focal_0_25`, `focal_1_00`, and
-  `focal_1_25` on deterministic omicron, epsilon, lunate sigma, and chi
-  samples.
 
 ### Decisions
 
@@ -205,29 +201,12 @@ than smoother letter-like reconstructions. Pixel-level comparison against
 interpretation. This suggests that late one-epoch focal-weight changes in the
 `0.25` to `1.25` range are not the main lever for the current visual problem.
 
-The concern-class diagnostics refined that interpretation. On deterministic
-omicron, epsilon, lunate sigma, and chi samples, the focal probes were much
-better than the epoch-2 baseline on grayscale MSE and SSIM-like metrics, while
-the epoch-2 baseline remained much better on fixed-threshold ink IoU and ink
-recall. For omicron, for example, epoch2 scored `mse=0.1008`,
-`ssim_like=0.0519`, and `ink_iou=0.9507`, while `focal_0_25` scored
-`mse=0.0569`, `ssim_like=0.3898`, and `ink_iou=0.6845`.
-
-The diagnostic sheets explain the split. The epoch-2 sigmoid outputs are nearly
-black for many concern samples, with extreme negative logits and very low
-sigmoid means, but the fixed target-ink threshold marks much of each crop as
-ink. This lets epoch2 score well on binary ink overlap while looking visually
-poor. The focal probes, especially `focal_0_25`, preserve more grayscale letter
-structure, but their fixed-threshold ink masks are still poor. The current
-objective and quick ink metrics therefore appear misaligned with the desired
-grayscale letter reconstruction behavior.
-
 ### Open Questions
 
 - Was the full-dataset epoch-2 checkpoint trained with default focal `10.0`, or
   was an explicit focal value used in the original AWS environment?
-- Should the next AWS work shift to target construction, thresholding, output
-  size, or loss terms that reward grayscale structure rather than binary ink
-  coverage?
-- Should future model-selection criteria prioritize grayscale MSE/SSIM-like
-  concern-class diagnostics over fixed-threshold ink IoU and recall?
+- Should the next AWS work shift to per-class diagnostics, class-weight changes,
+  target construction, or output-size experiments before more focal-weight
+  runs?
+- Should we compute per-class visual metrics before spending more GPU time on
+  focal-weight changes?
