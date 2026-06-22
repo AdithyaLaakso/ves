@@ -167,30 +167,6 @@ print(torch.backends.cudnn.allow_tf32)
         self.assertIn("True\nTrue", default_result.stdout)
         self.assertIn("False\nFalse", disabled_result.stdout)
 
-    def test_settings_reads_resume_checkpoint_from_environment(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint = Path(tmpdir) / "0-4.pth"
-            code = """
-import settings
-print(settings.load_from)
-"""
-            env = {
-                "PYTHONPATH": str(MODEL_DIR),
-                "VES_SMOKE_TEST": "1",
-                "VES_FORCE_CPU": "1",
-                "VES_RESUME_FROM": str(checkpoint),
-            }
-            result = subprocess.run(
-                [sys.executable, "-c", code],
-                cwd=ROOT,
-                env={**env},
-                text=True,
-                capture_output=True,
-                check=True,
-            )
-
-            self.assertIn(str(checkpoint), result.stdout.strip().splitlines())
-
     def test_setup_script_makes_cuda_debug_opt_in(self):
         setup_text = (MODEL_DIR / "setup.zsh").read_text(encoding="utf-8")
 

@@ -162,7 +162,7 @@ num_classes = len(letter_to_idx)
 
 print_every_batches = 1
 
-load_from = os.getenv("VES_RESUME_FROM") or None
+load_from = None
 
 run_dir_raw = os.getenv("VES_RUN_DIR")
 run_dir = Path(run_dir_raw) if run_dir_raw else None
