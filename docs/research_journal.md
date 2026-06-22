@@ -151,13 +151,6 @@ focal-1 baseline unless its original environment is verified from logs.
 - `20260619-focal-1-25-2048`: resumed from epoch 2 with
   `VES_FOCAL_WEIGHT=1.25`, `max_size=2048`, `num_epochs=1`, `batch_size=4`.
   The run completed and generated fixed-seed review sheets.
-- `20260619-focal-1-00-2048`: resumed from the same epoch-2 checkpoint with
-  `VES_FOCAL_WEIGHT=1.0`, `max_size=2048`, `num_epochs=1`, `batch_size=4`.
-  This run was accidentally written into the existing
-  `runs/experiments/focal-weight-1-25-2048-20260619` experiment directory as
-  `runs/focal_1_00/`, beside the earlier `runs/focal_1_25/` output. The copied
-  local folder therefore contains both review sets, but its `experiment.json`
-  now describes the later focal-1.0 probe.
 
 ### Decisions
 
@@ -181,20 +174,11 @@ The result supports the interpretation that increasing focal pressure above the
 current candidate range pushes the model toward overconfident dark/blob outputs.
 The pipeline worked, but the tested setting is not promising.
 
-The explicit 2048-sample resumed `focal_1_00` probe did not visibly improve the
-same fixed review sheets. Its outputs were nearly indistinguishable from the
-`focal_1_25` sheets at visual-review scale: both showed saturated black regions,
-coarse blocky shapes, and no clear rescue of omicron or epsilon. A pixel-level
-comparison of the rendered PNGs showed small but non-zero differences, so the
-files are not byte-identical, but the qualitative result is effectively the
-same.
-
 ### Open Questions
 
 - Was the full-dataset epoch-2 checkpoint trained with default focal `10.0`, or
   was an explicit focal value used in the original AWS environment?
-- Should the next AWS probe test lower values such as `0.25`, `0.5`, and
-  `0.75`, or should the next step shift to per-class diagnostics before more
-  focal-weight runs?
+- Should the next AWS probe use explicit `VES_FOCAL_WEIGHT=1.0`, or should it
+  test lower values such as `0.25`, `0.5`, and `0.75`?
 - Should we compute per-class visual metrics before spending more GPU time on
   focal-weight changes?
