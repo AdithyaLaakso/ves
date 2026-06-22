@@ -55,52 +55,6 @@ Useful run controls:
 2. `VES_DEBUG_CUDA=1` enables CUDA launch blocking and verbose Dynamo logging for diagnostics.
 3. `VES_ALLOW_TF32=0` disables TF32 if exact float32 behavior is needed for comparison.
 4. `VES_HARD_TIMEOUT=0` disables the setup-script hard timeout. Non-smoke runs default to no hard timeout; smoke runs default to 1200 seconds.
-5. `VES_STEP_CHECKPOINT_EVERY_BATCHES=500` writes intra-epoch recovery checkpoints every N training batches. Non-smoke runs default to `500`; smoke tests default to `0`.
-6. `VES_STEP_CHECKPOINT_EVERY_MINUTES=15` can additionally write recovery checkpoints after N elapsed minutes. The default is `0`.
-7. `VES_KEEP_STEP_CHECKPOINTS=3` keeps the latest numbered recovery snapshots in addition to `checkpoints/recovery-latest.pt`.
-8. `VES_RESUME_TRAINING_STATE=runs/<run_id>/checkpoints/recovery-latest.pt` resumes model, optimizer, scheduler, scaler, RNG state, epoch, batch, and global step from an intra-epoch recovery checkpoint.
-
-For long EC2 runs, use `tmux` and tee output to a persistent log:
-
-```
-tmux new -s ves-full
-cd /home/ubuntu/ves/model
-mkdir -p runs/logs
-
-PYTHON_BIN=/opt/pytorch/bin/python \
-VES_RESUME_FROM=runs/20260607T221147Z-ce45afd60/new.pth \
-VES_SMOKE_TEST=0 \
-VES_FORCE_CPU=0 \
-VES_MAX_SIZE=0 \
-VES_BATCH_SIZE=8 \
-VES_NUM_EPOCHS=1 \
-VES_SIZE_PROFILE=96 \
-VES_SEED=42 \
-VES_STEP_CHECKPOINT_EVERY_BATCHES=500 \
-VES_STEP_CHECKPOINT_EVERY_MINUTES=15 \
-VES_KEEP_STEP_CHECKPOINTS=3 \
-./setup.zsh 2>&1 | tee runs/logs/full_dataset_from_221147.log
-```
-
-If that run is interrupted before the epoch finishes, resume from the recovery checkpoint:
-
-```
-cd /home/ubuntu/ves/model
-
-PYTHON_BIN=/opt/pytorch/bin/python \
-VES_RESUME_TRAINING_STATE=runs/<interrupted_run>/checkpoints/recovery-latest.pt \
-VES_SMOKE_TEST=0 \
-VES_FORCE_CPU=0 \
-VES_MAX_SIZE=0 \
-VES_BATCH_SIZE=8 \
-VES_NUM_EPOCHS=1 \
-VES_SIZE_PROFILE=96 \
-VES_SEED=42 \
-VES_STEP_CHECKPOINT_EVERY_BATCHES=500 \
-VES_STEP_CHECKPOINT_EVERY_MINUTES=15 \
-VES_KEEP_STEP_CHECKPOINTS=3 \
-./setup.zsh 2>&1 | tee runs/logs/full_dataset_resume.log
-```
 
 To view the logs of a previous run:
 1. `cd model/`
