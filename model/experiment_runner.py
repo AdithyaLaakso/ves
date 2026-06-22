@@ -275,54 +275,6 @@ def write_inventory(runs_dir: Path, entries: Sequence[InventoryEntry]) -> None:
     (runs_dir / "RUN_INDEX.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def inventory_dir_for_experiment(experiment_dir: Path) -> Path:
-    experiment_dir = Path(experiment_dir)
-    if experiment_dir.parent.name == "experiments":
-        return experiment_dir.parent.parent
-    return MODEL_DIR / "runs"
-
-
-def run_sweep(
-    config: SweepConfig,
-    *,
-    execute: bool,
-    run_review: bool,
-    index_existing: bool,
-) -> List[InventoryEntry]:
-    plans = build_probe_plans(config)
-    inventory_dir = inventory_dir_for_experiment(config.experiment_dir)
-    config.experiment_dir.mkdir(parents=True, exist_ok=True)
-    write_experiment_manifest(config, plans, config.experiment_dir / "experiment.json")
-
-    entries: List[InventoryEntry] = []
-    if index_existing:
-        entries.extend(discover_existing_runs(inventory_dir))
-
-    for plan in plans:
-        if not execute:
-            entries.append(probe_inventory_entry(plan, "planned", "Dry run only; training not launched."))
-            continue
-
-        plan.run_dir.mkdir(parents=True, exist_ok=True)
-        train_result = run_command(plan.train_command, cwd=MODEL_DIR, env=plan.env)
-        if train_result.returncode != 0:
-            entries.append(probe_inventory_entry(plan, "training_failed", "Training command failed."))
-            write_inventory(inventory_dir, entries)
-            break
-
-        if run_review:
-            review_result = run_command(plan.review_command, cwd=MODEL_DIR, env=plan.env)
-            if review_result.returncode != 0:
-                entries.append(probe_inventory_entry(plan, "review_failed", "Training succeeded; review command failed."))
-                write_inventory(inventory_dir, entries)
-                continue
-
-        entries.append(probe_inventory_entry(plan, "completed", "Training completed."))
-
-    write_inventory(inventory_dir, entries)
-    return entries
-
-
 def run_command(command: Sequence[str], *, cwd: Path, env: Dict[str, str]) -> CommandResult:
     merged_env = os.environ.copy()
     merged_env.update(env)
