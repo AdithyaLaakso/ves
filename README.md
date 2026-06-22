@@ -66,15 +66,6 @@ To run inference visualizer on a saved model using the preset data:
 2. `python visualize_model.py path/to/weights.pth`
 3. Arrow keys navigate between samples, `q` exits
 
-To generate headless visual review sheets for the current manifest workflow:
-1. `cd model/`
-2. Run:
-   ```
-   VES_SIZE_PROFILE=96 /opt/pytorch/bin/python usage/visual_review_sheets.py runs/20260607T221147Z-ce45afd60/new.pth --count 24 --seed 42 --samples-per-sheet 12
-   ```
-3. This writes PNG contact sheets and `metadata.json` under `runs/20260607T221147Z-ce45afd60/visual_review/`.
-4. To compare checkpoints directly, reuse the same `--seed` or pass the same comma-separated `--indices`.
-
 
 To run inference visualizer on a saved model using your own sample:
 1. `cd model/usage/`
