@@ -169,9 +169,6 @@ focal-1 baseline unless its original environment is verified from logs.
 - `20260619-focal-0-00-endpoint`: resumed from the same epoch-2 checkpoint with
   `VES_FOCAL_WEIGHT=0.0`, then compared `focal_0_00` against `focal_0_25` and
   `epoch2` on the same concern-class metric set.
-- `20260619-target-threshold-audit`: audited target construction and
-  thresholding on the same concern-class sample set used for the focal
-  diagnostics.
 
 ### Decisions
 
@@ -238,25 +235,6 @@ slightly more ink than `focal_0_25`, but that did not improve grayscale
 fidelity. This makes `0.25` a better lower-bound candidate than `0.0` for this
 late-resume setup.
 
-The target-threshold audit clarified that the supervised target is not a
-separate binary mask. For manifest records, the target is the clean ALPUB crop
-itself, downsampled to the active output size and normalized to `0..1`; the
-input is a degraded version of that same crop. Binary "ink" is therefore an
-evaluation threshold applied after the fact. On the concern-class sample set,
-the fixed `target < 0.5` rule marks most of each target crop as ink: omicron
-`0.9416`, epsilon `0.8783`, lunate sigma `0.8247`, and chi `0.9872` mean
-target-ink fraction. Otsu thresholding produces more plausible but still
-imperfect ink fractions: omicron `0.3585`, epsilon `0.4048`, lunate sigma
-`0.2925`, and chi `0.3832`.
-
-Target-only inspection sheets show why a binary target is difficult here. Some
-crops have uneven backgrounds, neighboring marks, low contrast, or ambiguous
-letter forms. Otsu-thresholded panels are often more plausible than the fixed
-`0.5` rule, but they can still break the letter or include background artifacts.
-This supports treating the grayscale clean crop as the primary reconstruction
-target while using thresholded masks only as diagnostic aids, not as the main
-model-selection criterion.
-
 ### Open Questions
 
 - Was the full-dataset epoch-2 checkpoint trained with default focal `10.0`, or
@@ -268,5 +246,3 @@ model-selection criterion.
   concern-class diagnostics over fixed-threshold ink IoU and recall?
 - Should `VES_FOCAL_WEIGHT=0.25` become the provisional lower-focal baseline
   while the project investigates target construction and output-size changes?
-- Should the diagnostic tooling replace fixed `0.5` ink metrics with Otsu or
-  soft-mask metrics, while keeping grayscale MSE/SSIM-like scores primary?
